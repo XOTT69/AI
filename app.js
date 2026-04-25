@@ -14,7 +14,7 @@ const smartModeBtn = document.getElementById("smartModeBtn");
 
 document.title = "AI Chat BY Антон";
 
-const STORAGE_KEY = "ai-chat-by-anton-v1";
+const STORAGE_KEY = "ai-chat-by-anton-v2";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
 if (!state || !Array.isArray(state.chats) || !state.chats.length) {
@@ -25,9 +25,7 @@ if (!state || !Array.isArray(state.chats) || !state.chats.length) {
   };
 }
 
-if (!state.mode) {
-  state.mode = "fast";
-}
+if (!state.mode) state.mode = "fast";
 
 let currentController = null;
 let requestInFlight = false;
@@ -194,7 +192,6 @@ function renderChatList() {
     actions.append(openBtn, removeBtn);
     div.append(title, meta, actions);
     div.onclick = () => switchChat(item.id);
-
     chatList.appendChild(div);
   }
 }
@@ -224,7 +221,22 @@ function renderAssistantMessage(content) {
   return el;
 }
 
-function setAssistantHTML(el, labelText, contentText, typing = false) {
+function setAssistantStreamingText(el, labelText, contentText, typing = false) {
+  el.className = `message assistant${typing ? " typing" : ""}`;
+
+  let inner = el.querySelector(".message-content");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "message-content";
+    el.innerHTML = "";
+    el.appendChild(inner);
+  }
+
+  inner.textContent = `${labelText || ""}${contentText || ""}`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function finalizeAssistantMarkdown(el, labelText, contentText, typing = false) {
   el.className = `message assistant${typing ? " typing" : ""}`;
 
   let inner = el.querySelector(".message-content");
@@ -320,7 +332,6 @@ async function* parseSSEStream(stream) {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-
       const events = buffer.split("\n\n");
       buffer = events.pop() ?? "";
 
@@ -380,9 +391,7 @@ clearBtn.addEventListener("click", () => {
 });
 
 stopBtn.addEventListener("click", () => {
-  if (currentController) {
-    currentController.abort();
-  }
+  if (currentController) currentController.abort();
 });
 
 promptInput.addEventListener("input", autoResize);
@@ -418,7 +427,7 @@ form.addEventListener("submit", async (e) => {
 
   const inner = document.createElement("div");
   inner.className = "message-content";
-  inner.innerHTML = renderMarkdown("Думаю...");
+  inner.textContent = "Думаю...";
   assistantEl.appendChild(inner);
 
   chat.appendChild(assistantEl);
@@ -466,20 +475,18 @@ form.addEventListener("submit", async (e) => {
 
       if (event.type === "meta" && event.label) {
         labelText = `[${event.label}]\n\n`;
-        setAssistantHTML(assistantEl, labelText, contentText, true);
+        setAssistantStreamingText(assistantEl, labelText, contentText, true);
         continue;
       }
 
       if (event.type === "content") {
         gotAnyContent = true;
         contentText += event.content || "";
-        setAssistantHTML(assistantEl, labelText, contentText, true);
+        setAssistantStreamingText(assistantEl, labelText, contentText, true);
         continue;
       }
 
-      if (event.type === "reasoning") {
-        continue;
-      }
+      if (event.type === "reasoning") continue;
 
       if (event.type === "finish") {
         finishReason = event.finish_reason || null;
@@ -495,12 +502,13 @@ form.addEventListener("submit", async (e) => {
 
     if (finishReason === "length") {
       contentText += "\n\n_Відповідь обрізана через ліміт довжини. Напиши: `продовжуй`._";
-      setAssistantHTML(assistantEl, labelText, contentText, false);
     }
 
     if (!gotAnyContent || !contentText.trim()) {
       throw new Error("Модель повернула порожню відповідь");
     }
+
+    finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
 
     const stored = `${labelText}${contentText}`;
     active.messages.push({ role: "assistant", content: stored });
@@ -509,13 +517,12 @@ form.addEventListener("submit", async (e) => {
     renderAll();
   } catch (error) {
     assistantEl.classList.remove("typing");
-
     const msg = String(error?.message || "").toLowerCase();
 
     if (error.name === "AbortError") {
       if (contentText.trim()) {
         contentText += "\n\n_Зупинено._";
-        setAssistantHTML(assistantEl, labelText, contentText, false);
+        finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
 
         const stored = `${labelText}${contentText}`;
         active.messages.push({ role: "assistant", content: stored });
@@ -523,12 +530,12 @@ form.addEventListener("submit", async (e) => {
         saveState();
         renderAll();
       } else {
-        setAssistantHTML(assistantEl, "", "Зупинено.", false);
+        assistantEl.querySelector(".message-content").textContent = "Зупинено.";
       }
     } else if (msg.includes("terminated")) {
       if (contentText.trim()) {
         contentText += "\n\n_Потік обірвався. Напиши: `продовжуй`._";
-        setAssistantHTML(assistantEl, labelText, contentText, false);
+        finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
 
         const stored = `${labelText}${contentText}`;
         active.messages.push({ role: "assistant", content: stored });
@@ -536,10 +543,11 @@ form.addEventListener("submit", async (e) => {
         saveState();
         renderAll();
       } else {
-        setAssistantHTML(assistantEl, "", "Потік відповіді обірвався. Спробуй ще раз.", false);
+        assistantEl.querySelector(".message-content").textContent = "Потік відповіді обірвався. Спробуй ще раз.";
       }
     } else {
-      setAssistantHTML(assistantEl, "", "Помилка: " + (error.message || "невідома помилка"), false);
+      assistantEl.querySelector(".message-content").textContent =
+        "Помилка: " + (error.message || "невідома помилка");
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
