@@ -21,7 +21,11 @@ export default async function handler(req, res) {
         content: thinking ? "detailed thinking on" : "detailed thinking off"
       },
       ...messages
-        .filter((m) => m && typeof m.content === "string" && ["user", "assistant", "system"].includes(m.role))
+        .filter((m) =>
+          m &&
+          typeof m.content === "string" &&
+          ["user", "assistant", "system"].includes(m.role)
+        )
         .map((m) => ({
           role: m.role,
           content: m.content
@@ -31,7 +35,7 @@ export default async function handler(req, res) {
     const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
+        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -66,7 +70,7 @@ export default async function handler(req, res) {
     const content =
       data?.choices?.[0]?.message?.content ||
       data?.choices?.[0]?.text ||
-      "Порожня відповідь від моделі";
+      "";
 
     return res.status(200).json({ content });
   } catch (error) {
