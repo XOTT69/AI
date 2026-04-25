@@ -2,48 +2,48 @@ const ALLOWED_MODELS = {
   "deepseek-ai/deepseek-v4-pro": {
     label: "DeepSeek V4 Pro — Найрозумніший",
     system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, по суті, без води.",
-    fast: { maxTokens: 500, temperature: 0.2 },
-    smart: { maxTokens: 1000, temperature: 0.5 }
+    fast: { maxTokens: 900, temperature: 0.2 },
+    smart: { maxTokens: 1800, temperature: 0.5 }
   },
   "deepseek-ai/deepseek-v3-2": {
     label: "DeepSeek V3.2 — Логіка і складні задачі",
     system: "Ти AI-помічник для складних задач, логіки, аналізу і reasoning. Відповідай українською, структуровано і точно.",
-    fast: { maxTokens: 500, temperature: 0.2 },
-    smart: { maxTokens: 1000, temperature: 0.5 }
+    fast: { maxTokens: 900, temperature: 0.2 },
+    smart: { maxTokens: 1800, temperature: 0.5 }
   },
   "z-ai/glm4-7": {
     label: "GLM-5.1 — Агент і інструменти",
     system: "Ти AI-помічник, сильний у коді, інструментах, аналізі та агентних задачах. Відповідай українською, практично і чітко.",
-    fast: { maxTokens: 450, temperature: 0.2 },
-    smart: { maxTokens: 850, temperature: 0.4 }
+    fast: { maxTokens: 900, temperature: 0.2 },
+    smart: { maxTokens: 1500, temperature: 0.4 }
   },
   "mistralai/mistral-large-3-675b-instruct-2512": {
     label: "Mistral Large 3 — Сильний універсал",
     system: "Ти універсальний AI-помічник для чату, текстів, аналізу та ідей. Відповідай українською природно, розумно і стисло.",
-    fast: { maxTokens: 450, temperature: 0.2 },
-    smart: { maxTokens: 800, temperature: 0.4 }
+    fast: { maxTokens: 900, temperature: 0.2 },
+    smart: { maxTokens: 1500, temperature: 0.4 }
   },
   "mistralai/devstral-2-123b-instruct-2512": {
     label: "Devstral 2 — Найкращий для коду",
     system: "Ти AI-помічник для програмування. Допомагай з кодом, дебагом, архітектурою і поясненнями. Відповідай українською.",
-    fast: { maxTokens: 500, temperature: 0.1 },
-    smart: { maxTokens: 900, temperature: 0.2 }
+    fast: { maxTokens: 1000, temperature: 0.1 },
+    smart: { maxTokens: 1600, temperature: 0.2 }
   },
   "deepseek-ai/deepseek-v4-flash": {
     label: "DeepSeek V4 Flash — Швидкий",
     system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
-    fast: { maxTokens: 350, temperature: 0.1 },
-    smart: { maxTokens: 700, temperature: 0.3 }
+    fast: { maxTokens: 700, temperature: 0.1 },
+    smart: { maxTokens: 1200, temperature: 0.3 }
   },
   "bytedance/seed-oss-36b-instruct": {
     label: "Seed OSS 36B — Довгі тексти і контекст",
     system: "Ти AI-помічник для довгих текстів, великих контекстів, reasoning і загальних задач. Відповідай українською, структуровано.",
-    fast: { maxTokens: 450, temperature: 0.2 },
-    smart: { maxTokens: 850, temperature: 0.4 }
+    fast: { maxTokens: 900, temperature: 0.2 },
+    smart: { maxTokens: 1500, temperature: 0.4 }
   }
 };
 
-function trimMessages(messages, maxItems = 10) {
+function trimMessages(messages, maxItems = 12) {
   return messages.slice(-maxItems);
 }
 
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
 
     const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v4-flash";
     const modelConfig = ALLOWED_MODELS[selectedModel];
-    const recentMessages = trimMessages(messages, 10);
+    const recentMessages = trimMessages(messages, 12);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
 
     const safeMessages = [
@@ -97,7 +97,7 @@ export default async function handler(req, res) {
         messages: safeMessages,
         temperature: thinking ? Math.max(modeConfig.temperature, 0.5) : modeConfig.temperature,
         top_p: 0.95,
-        max_tokens: thinking ? Math.max(modeConfig.maxTokens, 900) : modeConfig.maxTokens,
+        max_tokens: thinking ? Math.max(modeConfig.maxTokens, 1400) : modeConfig.maxTokens,
         stream: Boolean(stream)
       })
     });
@@ -132,7 +132,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         content,
         model: selectedModel,
-        label: modelConfig.label
+        label: modelConfig.label,
+        finish_reason: data?.choices?.[0]?.finish_reason || null
       });
     }
 
@@ -161,14 +162,22 @@ export default async function handler(req, res) {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
+      for (const event of events) {
+        const lines = event.split("\n");
+        let dataLines = [];
 
-        const payload = trimmed.slice(5).trim();
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("data:")) {
+            dataLines.push(trimmed.slice(5).trim());
+          }
+        }
+
+        const payload = dataLines.join("");
+        if (!payload) continue;
 
         if (payload === "[DONE]") {
           res.write(`data: [DONE]\n\n`);
@@ -178,9 +187,47 @@ export default async function handler(req, res) {
 
         try {
           const json = JSON.parse(payload);
-          const delta = json?.choices?.[0]?.delta?.content || "";
+          const choice = json?.choices?.[0];
+          const delta = choice?.delta?.content || "";
+          const finishReason = choice?.finish_reason || null;
+
           if (delta) {
             res.write(`data: ${JSON.stringify({ type: "content", content: delta })}\n\n`);
+          }
+
+          if (finishReason) {
+            res.write(`data: ${JSON.stringify({ type: "finish", finish_reason: finishReason })}\n\n`);
+          }
+        } catch (_) {
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const lines = buffer.split("\n");
+      let dataLines = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:")) {
+          dataLines.push(trimmed.slice(5).trim());
+        }
+      }
+
+      const payload = dataLines.join("");
+      if (payload && payload !== "[DONE]") {
+        try {
+          const json = JSON.parse(payload);
+          const choice = json?.choices?.[0];
+          const delta = choice?.delta?.content || "";
+          const finishReason = choice?.finish_reason || null;
+
+          if (delta) {
+            res.write(`data: ${JSON.stringify({ type: "content", content: delta })}\n\n`);
+          }
+
+          if (finishReason) {
+            res.write(`data: ${JSON.stringify({ type: "finish", finish_reason: finishReason })}\n\n`);
           }
         } catch (_) {
         }
@@ -200,7 +247,6 @@ export default async function handler(req, res) {
     try {
       res.write(`data: ${JSON.stringify({ type: "error", message: error?.message || "Streaming crashed" })}\n\n`);
       res.end();
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 }
