@@ -7,7 +7,6 @@ const clearBtn = document.getElementById("clearBtn");
 const sendBtn = document.getElementById("sendBtn");
 
 const STORAGE_KEY = "nvidia-ai-chat-history";
-
 let messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 
 function saveMessages() {
@@ -29,8 +28,10 @@ function renderHistory() {
     renderMessage("system", "Готово до чату. Напиши перше повідомлення.");
     return;
   }
+
   for (const msg of messages) {
-    renderMessage(msg.role === "assistant" ? "assistant" : "user", msg.content);
+    const role = msg.role === "assistant" ? "assistant" : "user";
+    renderMessage(role, msg.content);
   }
 }
 
@@ -41,11 +42,33 @@ function autoResize() {
 
 promptInput.addEventListener("input", autoResize);
 
+promptInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
 clearBtn.addEventListener("click", () => {
   messages = [];
   saveMessages();
   renderHistory();
 });
+
+async function fetchWithTimeout(url, options = {}, timeout = 45000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -60,14 +83,14 @@ form.addEventListener("submit", async (e) => {
 
   promptInput.value = "";
   autoResize();
+
   sendBtn.disabled = true;
   sendBtn.textContent = "Генерується...";
 
-  const assistantEl = renderMessage("assistant", "");
-  assistantEl.classList.add("typing");
+  const assistantEl = renderMessage("assistant", "Думаю...");
 
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetchWithTimeout("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -77,34 +100,32 @@ form.addEventListener("submit", async (e) => {
         thinking: thinkingCheckbox.checked,
         messages
       })
-    });
+    }, 45000);
+
+    const raw = await response.text();
 
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(errText || "Помилка запиту");
+      throw new Error(raw || `HTTP ${response.status}`);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      fullText += chunk;
-      assistantEl.textContent = fullText;
-      chat.scrollTop = chat.scrollHeight;
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      throw new Error("Сервер повернув не JSON: " + raw);
     }
 
-    assistantEl.classList.remove("typing");
+    const answer = (data.content || "").trim();
 
-    messages.push({ role: "assistant", content: fullText || "Порожня відповідь." });
+    if (!answer) {
+      throw new Error("Модель повернула порожню відповідь");
+    }
+
+    assistantEl.textContent = answer;
+    messages.push({ role: "assistant", content: answer });
     saveMessages();
   } catch (error) {
-    assistantEl.classList.remove("typing");
-    assistantEl.textContent = "Помилка: " + error.message;
+    assistantEl.textContent = "Помилка: " + (error.message || "невідома помилка");
   } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = "Надіслати";
