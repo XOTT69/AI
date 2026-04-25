@@ -11,11 +11,17 @@ const ALLOWED_MODELS = {
     fast: { maxTokens: 900, temperature: 0.2 },
     smart: { maxTokens: 1800, temperature: 0.5 }
   },
-  "z-ai/glm5-1": {
-    label: "GLM-5.1 — Агент і інструменти",
+  "z-ai/glm4-7": {
+    label: "GLM-4.7 — Агент і інструменти",
     system: "Ти AI-помічник, сильний у коді, інструментах, аналізі та агентних задачах. Відповідай українською, практично і чітко.",
     fast: { maxTokens: 900, temperature: 0.2 },
     smart: { maxTokens: 1500, temperature: 0.4 }
+  },
+  "z-ai/glm5.1": {
+    label: "GLM-5.1 — Новий флагман",
+    system: "Ти AI-помічник нового покоління, сильний в агентних задачах, коді, reasoning і довгих workflow. Відповідай українською, чітко, технічно і практично.",
+    fast: { maxTokens: 1000, temperature: 0.2 },
+    smart: { maxTokens: 2000, temperature: 0.45 }
   },
   "mistralai/mistral-large-3-675b-instruct-2512": {
     label: "Mistral Large 3 — Сильний універсал",
@@ -250,51 +256,6 @@ export default async function handler(req, res) {
       }
     }
 
-    if (buffer.trim()) {
-      const lines = buffer.split("\n");
-      let dataLines = [];
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("data:")) {
-          dataLines.push(trimmed.slice(5).trim());
-        }
-      }
-
-      const payload = dataLines.join("");
-      if (payload && payload !== "[DONE]") {
-        try {
-          const json = JSON.parse(payload);
-          const choice = json?.choices?.[0];
-          const deltaContent = choice?.delta?.content ?? "";
-          const deltaReasoning = choice?.delta?.reasoning ?? "";
-          const finishReason = choice?.finish_reason ?? null;
-
-          if (deltaContent) {
-            sendSSE(res, {
-              type: "content",
-              content: deltaContent
-            });
-          }
-
-          if (deltaReasoning) {
-            sendSSE(res, {
-              type: "reasoning",
-              content: deltaReasoning
-            });
-          }
-
-          if (finishReason) {
-            sendSSE(res, {
-              type: "finish",
-              finish_reason: finishReason
-            });
-          }
-        } catch {
-        }
-      }
-    }
-
     sendSSE(res, { type: "done" });
     res.write(`data: [DONE]\n\n`);
     res.end();
@@ -313,7 +274,6 @@ export default async function handler(req, res) {
       });
       res.write(`data: [DONE]\n\n`);
       res.end();
-    } catch {
-    }
+    } catch {}
   }
 }
