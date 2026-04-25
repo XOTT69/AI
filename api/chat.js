@@ -1,93 +1,108 @@
-export const config = {
-  runtime: "nodejs"
-};
+const chat = document.getElementById("chat");
+const form = document.getElementById("chatForm");
+const promptInput = document.getElementById("prompt");
+const modelSelect = document.getElementById("model");
+const thinkingCheckbox = document.getElementById("thinking");
+const clearBtn = document.getElementById("clearBtn");
+const sendBtn = document.getElementById("sendBtn");
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+const STORAGE_KEY = "nvidia-ai-chat-history";
+
+let messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
+function saveMessages() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+}
+
+function renderMessage(role, content) {
+  const el = document.createElement("div");
+  el.className = `message ${role}`;
+  el.textContent = content;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+  return el;
+}
+
+function renderHistory() {
+  chat.innerHTML = "";
+  if (!messages.length) {
+    renderMessage("system", "Готово до чату. Напиши перше повідомлення.");
+    return;
   }
+  for (const msg of messages) {
+    renderMessage(msg.role === "assistant" ? "assistant" : "user", msg.content);
+  }
+}
+
+function autoResize() {
+  promptInput.style.height = "auto";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
+}
+
+promptInput.addEventListener("input", autoResize);
+
+clearBtn.addEventListener("click", () => {
+  messages = [];
+  saveMessages();
+  renderHistory();
+});
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const text = promptInput.value.trim();
+  if (!text) return;
+
+  const userMessage = { role: "user", content: text };
+  messages.push(userMessage);
+  saveMessages();
+  renderHistory();
+
+  promptInput.value = "";
+  autoResize();
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Генерується...";
+
+  const assistantEl = renderMessage("assistant", "");
 
   try {
-    const { messages, model, thinking } = req.body || {};
-
-    if (!Array.isArray(messages) || !messages.length) {
-      return res.status(400).json({ error: "Messages are required" });
-    }
-
-    const safeMessages = [
-      {
-        role: "system",
-        content: thinking ? "detailed thinking on" : "detailed thinking off"
-      },
-      ...messages
-        .filter((m) => m && typeof m.content === "string" && ["user", "assistant", "system"].includes(m.role))
-        .map((m) => ({
-          role: m.role,
-          content: m.content
-        }))
-    ];
-
-    const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: model || "deepseek-ai/deepseek-v4-flash",
-        messages: safeMessages,
-        temperature: 0.7,
-        top_p: 0.95,
-        max_tokens: 2048,
-        stream: true
+        model: modelSelect.value,
+        thinking: thinkingCheckbox.checked,
+        messages
       })
     });
 
-    if (!upstream.ok || !upstream.body) {
-      const errorText = await upstream.text();
-      return res.status(upstream.status).send(errorText || "Upstream error");
+    const raw = await response.text();
+
+    if (!response.ok) {
+      throw new Error(raw || "Помилка запиту");
     }
 
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Accel-Buffering", "no");
-
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-
-        const data = trimmed.slice(5).trim();
-        if (data === "[DONE]") {
-          res.end();
-          return;
-        }
-
-        try {
-          const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta;
-          const text = delta?.content || "";
-          if (text) {
-            res.write(text);
-          }
-        } catch (_) {
-        }
-      }
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("Сервер повернув не JSON: " + raw);
     }
 
-    res.end();
+    const answer = data.content || "Порожня відповідь.";
+    assistantEl.textContent = answer;
+
+    messages.push({ role: "assistant", content: answer });
+    saveMessages();
   } catch (error) {
-    res.status(500).json({
-      error: error.message || "Server error"
-    });
+    assistantEl.textContent = "Помилка: " + error.message;
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Надіслати";
   }
-}
+});
+
+renderHistory();
+autoResize();
