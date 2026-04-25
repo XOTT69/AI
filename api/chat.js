@@ -1,51 +1,27 @@
 const ALLOWED_MODELS = {
   "deepseek-ai/deepseek-v4-pro": {
-    label: "DeepSeek V4 Pro — Найрозумніший",
-    system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, по суті, без води.",
-    fast: { maxTokens: 900, temperature: 0.2 },
-    smart: { maxTokens: 1800, temperature: 0.5 }
-  },
-  "deepseek-ai/deepseek-v3-2": {
-    label: "DeepSeek V3.2 — Логіка і складні задачі",
-    system: "Ти AI-помічник для складних задач, логіки, аналізу і reasoning. Відповідай українською, структуровано і точно.",
-    fast: { maxTokens: 900, temperature: 0.2 },
-    smart: { maxTokens: 1800, temperature: 0.5 }
-  },
-  "z-ai/glm4-7": {
-    label: "GLM-4.7 — Агент і інструменти",
-    system: "Ти AI-помічник, сильний у коді, інструментах, аналізі та агентних задачах. Відповідай українською, практично і чітко.",
-    fast: { maxTokens: 900, temperature: 0.2 },
-    smart: { maxTokens: 1500, temperature: 0.4 }
+    label: "DeepSeek V4 Pro — Розумний універсал",
+    system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, глибоко і по суті.",
+    fast: { maxTokens: 1800, temperature: 0.2 },
+    smart: { maxTokens: 3500, temperature: 0.45 }
   },
   "z-ai/glm5.1": {
-    label: "GLM-5.1 — Новий флагман",
-    system: "Ти AI-помічник нового покоління, сильний в агентних задачах, коді, reasoning і довгих workflow. Відповідай українською, чітко, технічно і практично.",
-    fast: { maxTokens: 1000, temperature: 0.2 },
-    smart: { maxTokens: 2000, temperature: 0.45 }
-  },
-  "mistralai/mistral-large-3-675b-instruct-2512": {
-    label: "Mistral Large 3 — Сильний універсал",
-    system: "Ти універсальний AI-помічник для чату, текстів, аналізу та ідей. Відповідай українською природно, розумно і стисло.",
-    fast: { maxTokens: 900, temperature: 0.2 },
-    smart: { maxTokens: 1500, temperature: 0.4 }
-  },
-  "mistralai/devstral-2-123b-instruct-2512": {
-    label: "Devstral 2 — Найкращий для коду",
-    system: "Ти AI-помічник для програмування. Допомагай з кодом, дебагом, архітектурою і поясненнями. Відповідай українською.",
-    fast: { maxTokens: 1000, temperature: 0.1 },
-    smart: { maxTokens: 1600, temperature: 0.2 }
+    label: "GLM-5.1 — Сильний reasoning",
+    system: "Ти AI-помічник нового покоління. Відповідай українською, технічно сильно, структуровано, детально і практично.",
+    fast: { maxTokens: 1800, temperature: 0.2 },
+    smart: { maxTokens: 3500, temperature: 0.45 }
   },
   "deepseek-ai/deepseek-v4-flash": {
     label: "DeepSeek V4 Flash — Швидкий",
     system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
-    fast: { maxTokens: 700, temperature: 0.1 },
-    smart: { maxTokens: 1200, temperature: 0.3 }
+    fast: { maxTokens: 1200, temperature: 0.15 },
+    smart: { maxTokens: 2200, temperature: 0.3 }
   },
-  "bytedance/seed-oss-36b-instruct": {
-    label: "Seed OSS 36B — Довгі тексти і контекст",
-    system: "Ти AI-помічник для довгих текстів, великих контекстів, reasoning і загальних задач. Відповідай українською, структуровано.",
-    fast: { maxTokens: 900, temperature: 0.2 },
-    smart: { maxTokens: 1500, temperature: 0.4 }
+  "meta/llama-3.2-11b-vision-instruct": {
+    label: "Llama 3.2 Vision — Фото й OCR",
+    system: "Ти мультимодальний AI-помічник. Аналізуй фото, скріни, документи, інтерфейси та текст на зображеннях. Відповідай українською, чітко і докладно.",
+    fast: { maxTokens: 1400, temperature: 0.2 },
+    smart: { maxTokens: 2600, temperature: 0.35 }
   }
 };
 
@@ -72,13 +48,7 @@ export default async function handler(req, res) {
         ? JSON.parse(req.body)
         : (req.body || {});
 
-    const {
-      messages,
-      model,
-      thinking,
-      stream,
-      responseMode
-    } = body;
+    const { messages, model, thinking, stream, responseMode, image } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Messages are required" });
@@ -86,31 +56,55 @@ export default async function handler(req, res) {
 
     const selectedModel = ALLOWED_MODELS[model]
       ? model
-      : "deepseek-ai/deepseek-v4-flash";
+      : "deepseek-ai/deepseek-v4-pro";
 
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 12);
-    const modeConfig =
-      responseMode === "smart"
-        ? modelConfig.smart
-        : modelConfig.fast;
+    const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
 
-    const safeMessages = [
-      {
-        role: "system",
-        content: `${modelConfig.system} ${thinking ? "detailed thinking on" : "detailed thinking off"}`
-      },
-      ...recentMessages
-        .filter((m) =>
-          m &&
-          typeof m.content === "string" &&
-          ["user", "assistant", "system"].includes(m.role)
-        )
-        .map((m) => ({
-          role: m.role,
-          content: m.content
-        }))
-    ];
+    let safeMessages = [];
+
+    if (image?.dataUrl && selectedModel === "meta/llama-3.2-11b-vision-instruct") {
+      const lastUserText =
+        recentMessages.filter(m => m.role === "user").slice(-1)[0]?.content ||
+        "Опиши, що на цьому фото.";
+
+      safeMessages = [
+        {
+          role: "system",
+          content: modelConfig.system
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: lastUserText },
+            {
+              type: "image_url",
+              image_url: {
+                url: image.dataUrl
+              }
+            }
+          ]
+        }
+      ];
+    } else {
+      safeMessages = [
+        {
+          role: "system",
+          content: `${modelConfig.system} ${thinking ? "detailed thinking on" : "detailed thinking off"}`
+        },
+        ...recentMessages
+          .filter((m) =>
+            m &&
+            typeof m.content === "string" &&
+            ["user", "assistant", "system"].includes(m.role)
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content
+          }))
+      ];
+    }
 
     const requestPayload = {
       model: selectedModel,
@@ -120,7 +114,7 @@ export default async function handler(req, res) {
         : modeConfig.temperature,
       top_p: 0.95,
       max_tokens: thinking
-        ? Math.max(modeConfig.maxTokens, 1400)
+        ? Math.max(modeConfig.maxTokens, 3000)
         : modeConfig.maxTokens,
       stream: Boolean(stream)
     };
@@ -228,7 +222,6 @@ export default async function handler(req, res) {
           const json = JSON.parse(payload);
           const choice = json?.choices?.[0];
           const deltaContent = choice?.delta?.content ?? "";
-          const deltaReasoning = choice?.delta?.reasoning ?? "";
           const finishReason = choice?.finish_reason ?? null;
 
           if (deltaContent) {
@@ -238,21 +231,13 @@ export default async function handler(req, res) {
             });
           }
 
-          if (deltaReasoning) {
-            sendSSE(res, {
-              type: "reasoning",
-              content: deltaReasoning
-            });
-          }
-
           if (finishReason) {
             sendSSE(res, {
               type: "finish",
               finish_reason: finishReason
             });
           }
-        } catch {
-        }
+        } catch {}
       }
     }
 
