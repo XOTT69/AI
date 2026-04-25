@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NVIDIA AI Chat</title>
+  <title>AI Chat BY Антон</title>
+
   <link rel="stylesheet" href="style.css" />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css"
+  />
 </head>
 <body>
   <div class="layout">
@@ -42,7 +47,7 @@
           <select id="model">
             <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro — Найрозумніший</option>
             <option value="deepseek-ai/deepseek-v3-2">DeepSeek V3.2 — Логіка і складні задачі</option>
-            <option value="z-ai/glm-5.1">GLM-5.1 — Агент і інструменти</option>
+            <option value="z-ai/glm5-1">GLM-5.1 — Агент і інструменти</option>
             <option value="mistralai/mistral-large-3-675b-instruct-2512">Mistral Large 3 — Сильний універсал</option>
             <option value="mistralai/devstral-2-123b-instruct-2512">Devstral 2 — Найкращий для коду</option>
             <option value="deepseek-ai/deepseek-v4-flash" selected>DeepSeek V4 Flash — Швидкий</option>
@@ -54,12 +59,19 @@
             <span>Thinking</span>
           </label>
 
+          <div class="mode-switch">
+            <button type="button" id="fastModeBtn" class="mode-btn active">Швидко</button>
+            <button type="button" id="smartModeBtn" class="mode-btn">Розумно</button>
+          </div>
+
           <button type="submit" id="sendBtn" class="primary-btn">Надіслати</button>
         </div>
       </form>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
