@@ -9,7 +9,6 @@
   --border: rgba(255,255,255,0.08);
   --user: #1f2a52;
   --assistant: #141b36;
-  --danger: #ef4444;
   --shadow: 0 10px 35px rgba(0,0,0,0.35);
 }
 
@@ -76,7 +75,7 @@ body {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--border);
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-wrap: break-word;
   box-shadow: var(--shadow);
@@ -148,6 +147,8 @@ select {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
+  flex: 1;
+  min-width: 260px;
 }
 
 button {
@@ -171,17 +172,6 @@ button {
   gap: 8px;
   align-items: center;
   color: var(--muted);
-}
-
-.typing::after {
-  content: "▋";
-  animation: blink 1s infinite;
-  margin-left: 2px;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0.2; }
 }
 
 @media (max-width: 640px) {
