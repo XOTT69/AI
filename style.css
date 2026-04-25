@@ -1,514 +1,705 @@
-:root {
-  --bg: #09101f;
-  --panel: #111937;
-  --panel-2: #1a2347;
-  --panel-3: #0f1630;
-  --text: #eef2ff;
-  --muted: #a8b3cf;
-  --accent: #6ea8fe;
-  --accent-2: #8b5cf6;
-  --border: rgba(255,255,255,0.08);
-  --user: #1f2a52;
-  --assistant: #141b36;
-  --danger: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.12);
-  --shadow: 0 10px 35px rgba(0,0,0,0.35);
-  --code-bg: #0b1120;
-  --success: #22c55e;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  background: radial-gradient(circle at top, #17214a 0%, var(--bg) 45%);
-  color: var(--text);
-  font-family: Inter, Arial, sans-serif;
-}
-
-body {
-  min-height: 100vh;
-}
-
-button,
-select,
-textarea,
-input {
-  font: inherit;
-}
-
-.layout {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  min-height: 100vh;
-}
-
-.sidebar {
-  border-right: 1px solid var(--border);
-  background: rgba(8, 13, 28, 0.92);
-  backdrop-filter: blur(12px);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-
-.sidebar-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
-.sidebar h2 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.chat-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.chat-item {
-  background: var(--panel-3);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px;
-  cursor: pointer;
-  transition: transform .15s ease, border-color .15s ease, background .15s ease;
-}
-
-.chat-item:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255,255,255,0.16);
-}
-
-.chat-item.active {
-  background: var(--panel-2);
-  border-color: rgba(110,168,254,0.55);
-}
-
-.chat-item-title {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
-  margin-bottom: 6px;
-  word-break: break-word;
-}
-
-.chat-item-meta {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.chat-item-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.app {
-  max-width: 1180px;
-  width: 100%;
-  margin: 0 auto;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  gap: 16px;
-  min-width: 0;
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  background: rgba(18, 25, 51, 0.82);
-  backdrop-filter: blur(14px);
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-}
-
-.topbar h1 {
-  margin: 0 0 6px;
-  font-size: 28px;
-  line-height: 1.1;
-}
-
-.topbar p {
-  margin: 0;
-  color: var(--muted);
-}
-
-.topbar-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 6px 2px 120px;
-  min-width: 0;
-}
-
-.message {
-  max-width: 88%;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  line-height: 1.65;
-  word-wrap: break-word;
-  overflow-wrap: anywhere;
-  box-shadow: var(--shadow);
-}
-
-.message.user {
-  align-self: flex-end;
-  background: var(--user);
-  white-space: pre-wrap;
-}
-
-.message.assistant {
-  align-self: flex-start;
-  background: var(--assistant);
-}
-
-.message.system {
-  align-self: center;
-  background: rgba(255,255,255,0.06);
-  color: var(--muted);
-  max-width: 100%;
-  text-align: center;
-}
-
-.message-content {
-  min-width: 0;
-}
-
-.message-content > *:first-child {
-  margin-top: 0;
-}
-
-.message-content > *:last-child {
-  margin-bottom: 0;
-}
-
-.message-content p {
-  margin: 0 0 12px;
-}
-
-.message-content ul,
-.message-content ol {
-  margin: 0 0 12px 20px;
-}
-
-.message-content li + li {
-  margin-top: 4px;
-}
-
-.message-content blockquote {
-  margin: 0 0 12px;
-  padding: 10px 14px;
-  border-left: 4px solid rgba(110,168,254,0.6);
-  background: rgba(255,255,255,0.04);
-  border-radius: 10px;
-  color: #dbe4ff;
-}
-
-.message-content a {
-  color: #93c5fd;
-  text-decoration: none;
-}
-
-.message-content a:hover {
-  text-decoration: underline;
-}
-
-.message-content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0 0 14px;
-  display: block;
-  overflow-x: auto;
-}
-
-.message-content th,
-.message-content td {
-  border: 1px solid rgba(255,255,255,0.08);
-  padding: 10px;
-  text-align: left;
-}
-
-.message-content th {
-  background: rgba(255,255,255,0.05);
-}
-
-.message-content hr {
-  border: 0;
-  border-top: 1px solid rgba(255,255,255,0.1);
-  margin: 16px 0;
-}
-
-.message-content img {
-  max-width: 100%;
-  border-radius: 12px;
-}
-
-.message-content pre {
-  position: relative;
-  background: var(--code-bg);
-  border-radius: 14px;
-  padding: 16px;
-  overflow: auto;
-  border: 1px solid rgba(255,255,255,0.08);
-  margin: 0 0 14px;
-}
-
-.message-content code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.95em;
-}
-
-.message-content :not(pre) > code {
-  background: rgba(255,255,255,0.08);
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-.copy-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  background: rgba(255,255,255,0.1);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px;
-  padding: 7px 10px;
-  font-size: 12px;
-  transition: background .15s ease;
-}
-
-.copy-btn:hover {
-  background: rgba(255,255,255,0.18);
-}
-
-.composer {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: rgba(18, 25, 51, 0.92);
-  backdrop-filter: blur(14px);
-  box-shadow: var(--shadow);
-}
-
-#prompt {
-  width: 100%;
-  resize: none;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  color: var(--text);
-  border-radius: 16px;
-  padding: 14px;
-  font-size: 16px;
-  outline: none;
-  min-height: 60px;
-  max-height: 220px;
-}
-
-#prompt::placeholder {
-  color: #97a4c5;
-}
-
-.controls {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-}
-
-select,
-button {
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
-  border: 0;
-}
-
-select {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  flex: 1;
-  min-width: 260px;
-}
-
-button {
-  cursor: pointer;
-}
-
-.primary-btn {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: white;
-  font-weight: 700;
-}
-
-.ghost-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.danger-btn {
-  border-color: rgba(239,68,68,0.45);
-  color: #fecaca;
-  background: var(--danger-soft);
-}
-
-.small-btn {
-  padding: 10px 12px;
-  font-size: 13px;
-}
-
-.toggle {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.mode-switch {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.mode-btn {
-  background: transparent;
-  color: var(--text);
-  border-radius: 0;
-  border: 0;
-  min-width: 92px;
-}
-
-.mode-btn.active {
-  background: linear-gradient(135deg, rgba(110,168,254,0.35), rgba(139,92,246,0.35));
-}
-
-.chat-empty {
-  text-align: center;
-  color: var(--muted);
-  padding: 30px 16px;
-  border: 1px dashed rgba(255,255,255,0.1);
-  border-radius: 18px;
-  background: rgba(255,255,255,0.02);
-}
-
-.typing::after {
-  content: "▋";
-  display: inline-block;
-  margin-left: 2px;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0.2; }
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12);
-  border-radius: 999px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-@media (max-width: 920px) {
-  .layout {
-    grid-template-columns: 1fr;
+const chat = document.getElementById("chat");
+const form = document.getElementById("chatForm");
+const promptInput = document.getElementById("prompt");
+const modelSelect = document.getElementById("model");
+const thinkingCheckbox = document.getElementById("thinking");
+const clearBtn = document.getElementById("clearBtn");
+const stopBtn = document.getElementById("stopBtn");
+const newChatBtn = document.getElementById("newChatBtn");
+const chatList = document.getElementById("chatList");
+const chatTitle = document.getElementById("chatTitle");
+const sendBtn = document.getElementById("sendBtn");
+const fastModeBtn = document.getElementById("fastModeBtn");
+const smartModeBtn = document.getElementById("smartModeBtn");
+const imageInput = document.getElementById("imageInput");
+const imageBtn = document.getElementById("imageBtn");
+const generateImageBtn = document.getElementById("generateImageBtn");
+const selectedImageBar = document.getElementById("selectedImageBar");
+const selectedImageName = document.getElementById("selectedImageName");
+const removeImageBtn = document.getElementById("removeImageBtn");
+
+document.title = "AI Chat BY Антон";
+
+const STORAGE_KEY = "ai-chat-by-anton-v3";
+const VISION_MODEL = "meta/llama-3.2-11b-vision-instruct";
+
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+if (!state || !Array.isArray(state.chats) || !state.chats.length) {
+  state = {
+    activeChatId: null,
+    chats: [],
+    mode: "fast"
+  };
+}
+if (!state.mode) state.mode = "fast";
+
+let currentController = null;
+let requestInFlight = false;
+let selectedImage = null;
+
+marked.setOptions({
+  breaks: true,
+  gfm: true
+});
+
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function getActiveChat() {
+  return state.chats.find(c => c.id === state.activeChatId) || null;
+}
+
+function buildTitleFromText(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "Новий чат";
+  if (clean.length <= 42) return clean;
+  return clean.slice(0, 42) + "...";
+}
+
+function createChat(initialTitle = "Новий чат") {
+  const chatObj = {
+    id: uid(),
+    title: initialTitle,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: []
+  };
+  state.chats.unshift(chatObj);
+  state.activeChatId = chatObj.id;
+  saveState();
+  renderAll();
+  return chatObj;
+}
+
+function ensureChat() {
+  let active = getActiveChat();
+  if (!active) active = createChat("Новий чат");
+  return active;
+}
+
+function updateChatTitle(chatObj) {
+  const firstUser = chatObj.messages.find(m => m.role === "user");
+  if (firstUser) chatObj.title = buildTitleFromText(firstUser.content);
+}
+
+function deleteChat(chatId) {
+  state.chats = state.chats.filter(c => c.id !== chatId);
+  if (state.activeChatId === chatId) {
+    state.activeChatId = state.chats[0]?.id || null;
   }
+  if (!state.chats.length) {
+    createChat("Новий чат");
+    return;
+  }
+  saveState();
+  renderAll();
+}
 
-  .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+function switchChat(chatId) {
+  if (requestInFlight) return;
+  state.activeChatId = chatId;
+  saveState();
+  renderAll();
+}
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleString("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function renderMarkdown(text) {
+  const raw = marked.parse(text || "");
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true }
+  });
+}
+
+function enhanceCodeBlocks(container) {
+  container.querySelectorAll("pre code").forEach((block) => {
+    if (!block.dataset.hljsDone) {
+      hljs.highlightElement(block);
+      block.dataset.hljsDone = "1";
+    }
+
+    const pre = block.parentElement;
+    if (!pre || pre.querySelector(".copy-btn")) return;
+
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "Copy";
+
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(block.innerText);
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy", 1200);
+      } catch {
+        btn.textContent = "Error";
+        setTimeout(() => btn.textContent = "Copy", 1200);
+      }
+    });
+
+    pre.appendChild(btn);
+  });
+}
+
+function renderChatList() {
+  chatList.innerHTML = "";
+
+  for (const item of state.chats) {
+    const div = document.createElement("div");
+    div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
+
+    const title = document.createElement("div");
+    title.className = "chat-item-title";
+    title.textContent = item.title || "Новий чат";
+
+    const meta = document.createElement("div");
+    meta.className = "chat-item-meta";
+    meta.textContent = `${item.messages.length} повідомл. • ${formatDate(item.updatedAt)}`;
+
+    const actions = document.createElement("div");
+    actions.className = "chat-item-actions";
+
+    const openBtn = document.createElement("button");
+    openBtn.className = "ghost-btn small-btn";
+    openBtn.textContent = "Відкрити";
+    openBtn.onclick = (e) => {
+      e.stopPropagation();
+      switchChat(item.id);
+    };
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "ghost-btn small-btn danger-btn";
+    removeBtn.textContent = "Видалити";
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (confirm("Видалити цей чат?")) deleteChat(item.id);
+    };
+
+    actions.append(openBtn, removeBtn);
+    div.append(title, meta, actions);
+    div.onclick = () => switchChat(item.id);
+    chatList.appendChild(div);
   }
 }
 
-@media (max-width: 640px) {
-  .app {
-    padding: 12px;
+function renderUserMessage(content) {
+  const el = document.createElement("div");
+  el.className = "message user";
+  el.textContent = content;
+  chat.appendChild(el);
+  return el;
+}
+
+function renderAssistantMessage(content) {
+  const el = document.createElement("div");
+  el.className = "message assistant";
+
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.innerHTML = renderMarkdown(content || "");
+  el.appendChild(inner);
+
+  chat.appendChild(el);
+  enhanceCodeBlocks(el);
+  return el;
+}
+
+function renderImageMessage(title, imageUrl) {
+  const el = document.createElement("div");
+  el.className = "message assistant image-message";
+
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.innerHTML = `<p>${DOMPurify.sanitize(title || "Згенероване зображення")}</p><img class="generated-image" src="${imageUrl}" alt="generated image" />`;
+
+  el.appendChild(inner);
+  chat.appendChild(el);
+  return el;
+}
+
+function setAssistantStreamingText(el, labelText, contentText, typing = false) {
+  el.className = `message assistant${typing ? " typing" : ""}`;
+
+  let inner = el.querySelector(".message-content");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "message-content";
+    el.innerHTML = "";
+    el.appendChild(inner);
   }
 
-  .topbar {
-    flex-direction: column;
+  inner.textContent = `${labelText || ""}${contentText || ""}`;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function finalizeAssistantMarkdown(el, labelText, contentText, typing = false) {
+  el.className = `message assistant${typing ? " typing" : ""}`;
+
+  let inner = el.querySelector(".message-content");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "message-content";
+    el.innerHTML = "";
+    el.appendChild(inner);
   }
 
-  .message {
-    max-width: 100%;
+  const merged = `${labelText || ""}${contentText || ""}`;
+  inner.innerHTML = renderMarkdown(merged);
+  enhanceCodeBlocks(el);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function renderMessages() {
+  const active = ensureChat();
+  chat.innerHTML = "";
+  chatTitle.textContent = active.title || "Новий чат";
+
+  if (!active.messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "chat-empty";
+    empty.textContent = "AI Chat BY Антон готовий. Пиши текст, додавай фото або генеруй зображення.";
+    chat.appendChild(empty);
+    return;
   }
 
-  .controls {
-    align-items: stretch;
+  for (const msg of active.messages) {
+    if (msg.kind === "generated-image") {
+      renderImageMessage(msg.title, msg.url);
+    } else if (msg.role === "assistant") {
+      renderAssistantMessage(msg.content);
+    } else {
+      renderUserMessage(msg.content);
+    }
   }
 
-  .controls > * {
-    width: 100%;
-  }
+  chat.scrollTop = chat.scrollHeight;
+}
 
-  .topbar-actions {
-    width: 100%;
-  }
+function renderAll() {
+  renderChatList();
+  renderMessages();
+  applyModeButtons();
+}
 
-  .topbar-actions > * {
-    flex: 1;
-  }
+function autoResize() {
+  promptInput.style.height = "auto";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
+}
 
-  .mode-switch {
-    width: 100%;
-  }
+function trimMessages(messages, maxItems = 12) {
+  return messages
+    .filter(m => m.role === "user" || m.role === "assistant")
+    .slice(-maxItems)
+    .map(m => ({ role: m.role, content: m.content }));
+}
 
-  .mode-btn {
-    flex: 1;
-  }
+function getModelTimeout(model) {
+  if (model === "deepseek-ai/deepseek-v4-flash") return 120000;
+  if (model === "meta/llama-3.2-11b-vision-instruct") return 180000;
+  if (model === "z-ai/glm5.1") return 180000;
+  if (model === "deepseek-ai/deepseek-v4-pro") return 180000;
+  return 150000;
+}
 
-  .chat-item-actions {
-    flex-direction: column;
-  }
+function setBusy(isBusy) {
+  requestInFlight = isBusy;
+  sendBtn.disabled = isBusy;
+  stopBtn.disabled = !isBusy;
+  generateImageBtn.disabled = isBusy;
+  sendBtn.textContent = isBusy ? "Генерується..." : "Надіслати";
+}
 
-  .chat-item-actions > * {
-    width: 100%;
+function applyModeButtons() {
+  const mode = state.mode || "fast";
+  fastModeBtn.classList.toggle("active", mode === "fast");
+  smartModeBtn.classList.toggle("active", mode === "smart");
+}
+
+function getModePayload() {
+  return {
+    responseMode: state.mode === "smart" ? "smart" : "fast"
+  };
+}
+
+function updateSelectedImageUI() {
+  if (selectedImage) {
+    selectedImageBar.classList.remove("hidden");
+    selectedImageName.textContent = selectedImage.name || "photo";
+  } else {
+    selectedImageBar.classList.add("hidden");
+    selectedImageName.textContent = "Фото не вибрано";
   }
 }
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function* parseSSEStream(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+
+      for (const event of events) {
+        const lines = event.split("\n");
+        const dataLines = [];
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          dataLines.push(trimmed.slice(5).trim());
+        }
+
+        const data = dataLines.join("");
+        if (!data) continue;
+
+        if (data === "[DONE]") {
+          yield { type: "__done__" };
+          continue;
+        }
+
+        try {
+          yield JSON.parse(data);
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function sendChatMessage() {
+  const text = promptInput.value.trim();
+  if (!text && !selectedImage) return;
+
+  const active = ensureChat();
+  let contentText = text;
+
+  if (selectedImage) {
+    contentText = text || "Опиши, що на цьому фото.";
+  }
+
+  const userMessage = { role: "user", content: contentText };
+  active.messages.push(userMessage);
+
+  if (selectedImage) {
+    active.messages.push({
+      role: "assistant",
+      content: `*Додано фото:* ${selectedImage.name}`
+    });
+  }
+
+  updateChatTitle(active);
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+
+  promptInput.value = "";
+  autoResize();
+
+  const assistantEl = document.createElement("div");
+  assistantEl.className = "message assistant typing";
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.textContent = "Думаю...";
+  assistantEl.appendChild(inner);
+  chat.appendChild(assistantEl);
+  chat.scrollTop = chat.scrollHeight;
+
+  setBusy(true);
+
+  let timeoutId = null;
+  let streamedText = "";
+  let labelText = "";
+  let finishReason = null;
+  let gotAnyContent = false;
+
+  try {
+    currentController = new AbortController();
+    timeoutId = setTimeout(() => {
+      if (currentController) currentController.abort();
+    }, getModelTimeout(selectedImage ? VISION_MODEL : modelSelect.value));
+
+    const body = {
+      model: selectedImage ? VISION_MODEL : modelSelect.value,
+      thinking: thinkingCheckbox.checked,
+      messages: trimMessages(active.messages, 12),
+      stream: true,
+      image: selectedImage ? {
+        name: selectedImage.name,
+        dataUrl: selectedImage.dataUrl
+      } : null,
+      ...getModePayload()
+    };
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body),
+      signal: currentController.signal
+    });
+
+    if (!response.ok || !response.body) {
+      const raw = await response.text();
+      throw new Error(raw || `HTTP ${response.status}`);
+    }
+
+    for await (const event of parseSSEStream(response.body)) {
+      if (event.type === "__done__" || event.type === "done") {
+        assistantEl.classList.remove("typing");
+        continue;
+      }
+
+      if (event.type === "meta" && event.label) {
+        labelText = `[${event.label}]\n\n`;
+        setAssistantStreamingText(assistantEl, labelText, streamedText, true);
+        continue;
+      }
+
+      if (event.type === "content") {
+        gotAnyContent = true;
+        streamedText += event.content || "";
+        setAssistantStreamingText(assistantEl, labelText, streamedText, true);
+        continue;
+      }
+
+      if (event.type === "reasoning") continue;
+
+      if (event.type === "finish") {
+        finishReason = event.finish_reason || null;
+        continue;
+      }
+
+      if (event.type === "error") {
+        throw new Error(event.message || "Streaming error");
+      }
+    }
+
+    assistantEl.classList.remove("typing");
+
+    if (finishReason === "length") {
+      streamedText += "\n\n_Відповідь обрізана через ліміт довжини. Напиши: `продовжуй`._";
+    }
+
+    if (!gotAnyContent || !streamedText.trim()) {
+      throw new Error("Модель повернула порожню відповідь");
+    }
+
+    finalizeAssistantMarkdown(assistantEl, labelText, streamedText, false);
+
+    active.messages.push({
+      role: "assistant",
+      content: `${labelText}${streamedText}`
+    });
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
+
+    selectedImage = null;
+    updateSelectedImageUI();
+    imageInput.value = "";
+  } catch (error) {
+    assistantEl.classList.remove("typing");
+    const msg = String(error?.message || "").toLowerCase();
+
+    if (error.name === "AbortError") {
+      if (streamedText.trim()) {
+        streamedText += "\n\n_Зупинено._";
+        finalizeAssistantMarkdown(assistantEl, labelText, streamedText, false);
+
+        active.messages.push({
+          role: "assistant",
+          content: `${labelText}${streamedText}`
+        });
+        active.updatedAt = Date.now();
+        saveState();
+        renderAll();
+      } else {
+        assistantEl.querySelector(".message-content").textContent = "Зупинено.";
+      }
+    } else if (msg.includes("terminated")) {
+      if (streamedText.trim()) {
+        streamedText += "\n\n_Потік обірвався. Напиши: `продовжуй`._";
+        finalizeAssistantMarkdown(assistantEl, labelText, streamedText, false);
+
+        active.messages.push({
+          role: "assistant",
+          content: `${labelText}${streamedText}`
+        });
+        active.updatedAt = Date.now();
+        saveState();
+        renderAll();
+      } else {
+        assistantEl.querySelector(".message-content").textContent = "Потік відповіді обірвався. Спробуй ще раз.";
+      }
+    } else {
+      assistantEl.querySelector(".message-content").textContent =
+        "Помилка: " + (error.message || "невідома помилка");
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    setBusy(false);
+    currentController = null;
+  }
+}
+
+async function generateImage() {
+  const prompt = promptInput.value.trim();
+  if (!prompt || requestInFlight) return;
+
+  const active = ensureChat();
+  active.messages.push({ role: "user", content: `Згенеруй зображення: ${prompt}` });
+  updateChatTitle(active);
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+
+  promptInput.value = "";
+  autoResize();
+
+  const pendingEl = document.createElement("div");
+  pendingEl.className = "message assistant";
+  pendingEl.innerHTML = `<div class="message-content"><p>Генерую зображення...</p></div>`;
+  chat.appendChild(pendingEl);
+  chat.scrollTop = chat.scrollHeight;
+
+  setBusy(true);
+
+  try {
+    const response = await fetch("/api/image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ prompt })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.details || data?.error || "Image generation failed");
+    }
+
+    pendingEl.remove();
+
+    renderImageMessage("Згенероване зображення", data.url);
+
+    active.messages.push({
+      kind: "generated-image",
+      title: "Згенероване зображення",
+      url: data.url
+    });
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
+  } catch (error) {
+    pendingEl.innerHTML = `<div class="message-content"><p>Помилка генерації: ${DOMPurify.sanitize(error.message || "невідома помилка")}</p></div>`;
+  } finally {
+    setBusy(false);
+  }
+}
+
+fastModeBtn.addEventListener("click", () => {
+  state.mode = "fast";
+  saveState();
+  applyModeButtons();
+});
+
+smartModeBtn.addEventListener("click", () => {
+  state.mode = "smart";
+  saveState();
+  applyModeButtons();
+});
+
+newChatBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  createChat("Новий чат");
+});
+
+clearBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  const active = ensureChat();
+  active.messages = [];
+  active.title = "Новий чат";
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+});
+
+stopBtn.addEventListener("click", () => {
+  if (currentController) currentController.abort();
+});
+
+imageBtn.addEventListener("click", () => {
+  imageInput.click();
+});
+
+imageInput.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  selectedImage = {
+    name: file.name,
+    dataUrl: await fileToDataUrl(file)
+  };
+  updateSelectedImageUI();
+
+  if (modelSelect.value !== VISION_MODEL) {
+    modelSelect.value = VISION_MODEL;
+  }
+});
+
+removeImageBtn.addEventListener("click", () => {
+  selectedImage = null;
+  imageInput.value = "";
+  updateSelectedImageUI();
+});
+
+generateImageBtn.addEventListener("click", generateImage);
+
+promptInput.addEventListener("input", autoResize);
+
+promptInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (requestInFlight) return;
+  await sendChatMessage();
+});
+
+ensureChat();
+renderAll();
+autoResize();
+updateSelectedImageUI();
