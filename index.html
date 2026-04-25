@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NVIDIA AI Chat</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>NVIDIA AI Chat</h1>
+        <p>Чат-сайт на GitHub + Vercel + NVIDIA API</p>
+      </div>
+      <button id="clearBtn" class="ghost-btn">Очистити</button>
+    </header>
+
+    <main id="chat" class="chat"></main>
+
+    <form id="chatForm" class="composer">
+      <textarea
+        id="prompt"
+        placeholder="Напиши повідомлення..."
+        rows="1"
+        required
+      ></textarea>
+
+      <div class="controls">
+        <select id="model">
+          <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash</option>
+        </select>
+
+        <label class="toggle">
+          <input type="checkbox" id="thinking" />
+          <span>Thinking</span>
+        </label>
+
+        <button type="submit" id="sendBtn">Надіслати</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
