@@ -55,7 +55,7 @@ clearBtn.addEventListener("click", () => {
   renderHistory();
 });
 
-async function fetchWithTimeout(url, options = {}, timeout = 45000) {
+async function fetchWithTimeout(url, options = {}, timeout = 60000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
@@ -99,7 +99,7 @@ form.addEventListener("submit", async (e) => {
         thinking: thinkingCheckbox.checked,
         messages
       })
-    }, 45000);
+    }, 60000);
 
     const raw = await response.text();
 
@@ -115,13 +115,14 @@ form.addEventListener("submit", async (e) => {
     }
 
     const answer = (data.content || "").trim();
+    const label = data.label ? `[${data.label}]\n\n` : "";
 
     if (!answer) {
       throw new Error("Модель повернула порожню відповідь");
     }
 
-    assistantEl.textContent = answer;
-    messages.push({ role: "assistant", content: answer });
+    assistantEl.textContent = label + answer;
+    messages.push({ role: "assistant", content: label + answer });
     saveMessages();
   } catch (error) {
     assistantEl.textContent = "Помилка: " + (error.message || "невідома помилка");
