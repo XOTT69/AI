@@ -7,44 +7,57 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <div>
-        <h1>NVIDIA AI Chat</h1>
-        <p>Чат-сайт на GitHub + Vercel + NVIDIA API</p>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <h2>Чати</h2>
+        <button id="newChatBtn" class="primary-btn small-btn">+ Новий чат</button>
       </div>
-      <button id="clearBtn" class="ghost-btn">Очистити</button>
-    </header>
+      <div id="chatList" class="chat-list"></div>
+    </aside>
 
-    <main id="chat" class="chat"></main>
+    <div class="app">
+      <header class="topbar">
+        <div>
+          <h1>NVIDIA AI Chat</h1>
+          <p id="chatTitle">Новий чат</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="stopBtn" class="ghost-btn danger-btn" disabled>Стоп</button>
+          <button id="clearBtn" class="ghost-btn">Очистити чат</button>
+        </div>
+      </header>
 
-    <form id="chatForm" class="composer">
-      <textarea
-        id="prompt"
-        placeholder="Напиши повідомлення..."
-        rows="1"
-        required
-      ></textarea>
+      <main id="chat" class="chat"></main>
 
-      <div class="controls">
-        <select id="model">
-          <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro — Найрозумніший</option>
-          <option value="deepseek-ai/deepseek-v3-2">DeepSeek V3.2 — Логіка і складні задачі</option>
-          <option value="z-ai/glm4-7">GLM-4.7 — Агент і інструменти</option>
-          <option value="mistralai/mistral-large-3-675b-instruct-2512">Mistral Large 3 — Сильний універсал</option>
-          <option value="mistralai/devstral-2-123b-instruct-2512">Devstral 2 — Найкращий для коду</option>
-          <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash — Швидкий</option>
-          <option value="bytedance/seed-oss-36b-instruct">Seed OSS 36B — Довгі тексти і контекст</option>
-        </select>
+      <form id="chatForm" class="composer">
+        <textarea
+          id="prompt"
+          placeholder="Напиши повідомлення..."
+          rows="1"
+          required
+        ></textarea>
 
-        <label class="toggle">
-          <input type="checkbox" id="thinking" />
-          <span>Thinking</span>
-        </label>
+        <div class="controls">
+          <select id="model">
+            <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro — Найрозумніший</option>
+            <option value="deepseek-ai/deepseek-v3-2">DeepSeek V3.2 — Логіка і складні задачі</option>
+            <option value="z-ai/glm-5.1">GLM-5.1 — Агент і інструменти</option>
+            <option value="mistralai/mistral-large-3-675b-instruct-2512">Mistral Large 3 — Сильний універсал</option>
+            <option value="mistralai/devstral-2-123b-instruct-2512">Devstral 2 — Найкращий для коду</option>
+            <option value="deepseek-ai/deepseek-v4-flash" selected>DeepSeek V4 Flash — Швидкий</option>
+            <option value="bytedance/seed-oss-36b-instruct">Seed OSS 36B — Довгі тексти і контекст</option>
+          </select>
 
-        <button type="submit" id="sendBtn">Надіслати</button>
-      </div>
-    </form>
+          <label class="toggle">
+            <input type="checkbox" id="thinking" />
+            <span>Thinking</span>
+          </label>
+
+          <button type="submit" id="sendBtn" class="primary-btn">Надіслати</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script src="app.js"></script>
