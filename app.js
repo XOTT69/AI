@@ -12,7 +12,9 @@ const sendBtn = document.getElementById("sendBtn");
 const fastModeBtn = document.getElementById("fastModeBtn");
 const smartModeBtn = document.getElementById("smartModeBtn");
 
-const STORAGE_KEY = "nvidia-ai-chat-v4-ui";
+document.title = "AI Chat BY Антон";
+
+const STORAGE_KEY = "ai-chat-by-anton-v1";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
 if (!state || !Array.isArray(state.chats) || !state.chats.length) {
@@ -142,14 +144,10 @@ function enhanceCodeBlocks(container) {
       try {
         await navigator.clipboard.writeText(block.innerText);
         btn.textContent = "Copied!";
-        setTimeout(() => {
-          btn.textContent = "Copy";
-        }, 1200);
+        setTimeout(() => btn.textContent = "Copy", 1200);
       } catch {
         btn.textContent = "Error";
-        setTimeout(() => {
-          btn.textContent = "Copy";
-        }, 1200);
+        setTimeout(() => btn.textContent = "Copy", 1200);
       }
     });
 
@@ -226,7 +224,7 @@ function renderAssistantMessage(content) {
   return el;
 }
 
-function setAssistantHTML(el, content, typing = false) {
+function setAssistantHTML(el, labelText, contentText, typing = false) {
   el.className = `message assistant${typing ? " typing" : ""}`;
 
   let inner = el.querySelector(".message-content");
@@ -237,7 +235,8 @@ function setAssistantHTML(el, content, typing = false) {
     el.appendChild(inner);
   }
 
-  inner.innerHTML = renderMarkdown(content || "");
+  const merged = `${labelText || ""}${contentText || ""}`;
+  inner.innerHTML = renderMarkdown(merged);
   enhanceCodeBlocks(el);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -250,7 +249,7 @@ function renderMessages() {
   if (!active.messages.length) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
-    empty.textContent = "Почни новий чат. Режим “Швидко” дає коротші відповіді, “Розумно” — довші і сильніші.";
+    empty.textContent = "AI Chat BY Антон готовий. Режим “Швидко” дає коротші відповіді, “Розумно” — сильніші.";
     chat.appendChild(empty);
     return;
   }
@@ -283,7 +282,8 @@ function getModelTimeout(model) {
   if (model === "deepseek-ai/deepseek-v4-flash") return 90000;
   if (model === "mistralai/devstral-2-123b-instruct-2512") return 120000;
   if (model === "bytedance/seed-oss-36b-instruct") return 140000;
-  if (model === "z-ai/glm5-1") return 140000;
+  if (model === "z-ai/glm4-7") return 140000;
+  if (model === "z-ai/glm5.1") return 180000;
   if (model === "mistralai/mistral-large-3-675b-instruct-2512") return 180000;
   if (model === "deepseek-ai/deepseek-v4-pro") return 180000;
   if (model === "deepseek-ai/deepseek-v3-2") return 180000;
@@ -344,27 +344,7 @@ async function* parseSSEStream(stream) {
 
         try {
           yield JSON.parse(data);
-        } catch {
-        }
-      }
-    }
-
-    if (buffer.trim()) {
-      const lines = buffer.split("\n");
-      let dataLines = [];
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        dataLines.push(trimmed.slice(5).trim());
-      }
-
-      const data = dataLines.join("");
-      if (data && data !== "[DONE]") {
-        try {
-          yield JSON.parse(data);
-        } catch {
-        }
+        } catch {}
       }
     }
   } finally {
@@ -447,6 +427,10 @@ form.addEventListener("submit", async (e) => {
   setBusy(true);
 
   let timeoutId = null;
+  let contentText = "";
+  let labelText = "";
+  let finishReason = null;
+  let gotAnyContent = false;
 
   try {
     currentController = new AbortController();
@@ -474,11 +458,6 @@ form.addEventListener("submit", async (e) => {
       throw new Error(raw || `HTTP ${response.status}`);
     }
 
-    let finalText = "";
-    let label = "";
-    let finishReason = null;
-    let gotAnyContent = false;
-
     for await (const event of parseSSEStream(response.body)) {
       if (event.type === "__done__" || event.type === "done") {
         assistantEl.classList.remove("typing");
@@ -486,15 +465,15 @@ form.addEventListener("submit", async (e) => {
       }
 
       if (event.type === "meta" && event.label) {
-        label = `[${event.label}]\n\n`;
-        setAssistantHTML(assistantEl, label + finalText, true);
+        labelText = `[${event.label}]\n\n`;
+        setAssistantHTML(assistantEl, labelText, contentText, true);
         continue;
       }
 
       if (event.type === "content") {
         gotAnyContent = true;
-        finalText += event.content || "";
-        setAssistantHTML(assistantEl, label + finalText, true);
+        contentText += event.content || "";
+        setAssistantHTML(assistantEl, labelText, contentText, true);
         continue;
       }
 
@@ -515,15 +494,15 @@ form.addEventListener("submit", async (e) => {
     assistantEl.classList.remove("typing");
 
     if (finishReason === "length") {
-      finalText += "\n\n_Відповідь обрізана через ліміт довжини. Напиши: `продовжуй`._";
-      setAssistantHTML(assistantEl, label + finalText, false);
+      contentText += "\n\n_Відповідь обрізана через ліміт довжини. Напиши: `продовжуй`._";
+      setAssistantHTML(assistantEl, labelText, contentText, false);
     }
 
-    if (!gotAnyContent || !finalText.trim()) {
+    if (!gotAnyContent || !contentText.trim()) {
       throw new Error("Модель повернула порожню відповідь");
     }
 
-    const stored = label + finalText;
+    const stored = `${labelText}${contentText}`;
     active.messages.push({ role: "assistant", content: stored });
     active.updatedAt = Date.now();
     saveState();
@@ -531,10 +510,36 @@ form.addEventListener("submit", async (e) => {
   } catch (error) {
     assistantEl.classList.remove("typing");
 
+    const msg = String(error?.message || "").toLowerCase();
+
     if (error.name === "AbortError") {
-      setAssistantHTML(assistantEl, "Зупинено.");
+      if (contentText.trim()) {
+        contentText += "\n\n_Зупинено._";
+        setAssistantHTML(assistantEl, labelText, contentText, false);
+
+        const stored = `${labelText}${contentText}`;
+        active.messages.push({ role: "assistant", content: stored });
+        active.updatedAt = Date.now();
+        saveState();
+        renderAll();
+      } else {
+        setAssistantHTML(assistantEl, "", "Зупинено.", false);
+      }
+    } else if (msg.includes("terminated")) {
+      if (contentText.trim()) {
+        contentText += "\n\n_Потік обірвався. Напиши: `продовжуй`._";
+        setAssistantHTML(assistantEl, labelText, contentText, false);
+
+        const stored = `${labelText}${contentText}`;
+        active.messages.push({ role: "assistant", content: stored });
+        active.updatedAt = Date.now();
+        saveState();
+        renderAll();
+      } else {
+        setAssistantHTML(assistantEl, "", "Потік відповіді обірвався. Спробуй ще раз.", false);
+      }
     } else {
-      setAssistantHTML(assistantEl, "Помилка: " + (error.message || "невідома помилка"));
+      setAssistantHTML(assistantEl, "", "Помилка: " + (error.message || "невідома помилка"), false);
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
