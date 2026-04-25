@@ -2,44 +2,44 @@ const ALLOWED_MODELS = {
   "deepseek-ai/deepseek-v4-pro": {
     label: "DeepSeek V4 Pro — Найрозумніший",
     system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, по суті, без води.",
-    maxTokens: 900,
-    temperature: 0.4
+    fast: { maxTokens: 500, temperature: 0.2 },
+    smart: { maxTokens: 1000, temperature: 0.5 }
   },
   "deepseek-ai/deepseek-v3-2": {
     label: "DeepSeek V3.2 — Логіка і складні задачі",
     system: "Ти AI-помічник для складних задач, логіки, аналізу і reasoning. Відповідай українською, структуровано і точно.",
-    maxTokens: 900,
-    temperature: 0.4
+    fast: { maxTokens: 500, temperature: 0.2 },
+    smart: { maxTokens: 1000, temperature: 0.5 }
   },
   "z-ai/glm4-7": {
     label: "GLM-5.1 — Агент і інструменти",
     system: "Ти AI-помічник, сильний у коді, інструментах, аналізі та агентних задачах. Відповідай українською, практично і чітко.",
-    maxTokens: 700,
-    temperature: 0.3
+    fast: { maxTokens: 450, temperature: 0.2 },
+    smart: { maxTokens: 850, temperature: 0.4 }
   },
   "mistralai/mistral-large-3-675b-instruct-2512": {
     label: "Mistral Large 3 — Сильний універсал",
     system: "Ти універсальний AI-помічник для чату, текстів, аналізу та ідей. Відповідай українською природно, розумно і стисло.",
-    maxTokens: 700,
-    temperature: 0.4
+    fast: { maxTokens: 450, temperature: 0.2 },
+    smart: { maxTokens: 800, temperature: 0.4 }
   },
   "mistralai/devstral-2-123b-instruct-2512": {
     label: "Devstral 2 — Найкращий для коду",
     system: "Ти AI-помічник для програмування. Допомагай з кодом, дебагом, архітектурою і поясненнями. Відповідай українською.",
-    maxTokens: 800,
-    temperature: 0.2
+    fast: { maxTokens: 500, temperature: 0.1 },
+    smart: { maxTokens: 900, temperature: 0.2 }
   },
   "deepseek-ai/deepseek-v4-flash": {
     label: "DeepSeek V4 Flash — Швидкий",
     system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
-    maxTokens: 450,
-    temperature: 0.2
+    fast: { maxTokens: 350, temperature: 0.1 },
+    smart: { maxTokens: 700, temperature: 0.3 }
   },
   "bytedance/seed-oss-36b-instruct": {
     label: "Seed OSS 36B — Довгі тексти і контекст",
     system: "Ти AI-помічник для довгих текстів, великих контекстів, reasoning і загальних задач. Відповідай українською, структуровано.",
-    maxTokens: 700,
-    temperature: 0.3
+    fast: { maxTokens: 450, temperature: 0.2 },
+    smart: { maxTokens: 850, temperature: 0.4 }
   }
 };
 
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { messages, model, thinking, stream } = body;
+    const { messages, model, thinking, stream, responseMode } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Messages are required" });
@@ -67,6 +67,7 @@ export default async function handler(req, res) {
     const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v4-flash";
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 10);
+    const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
 
     const safeMessages = [
       {
@@ -85,23 +86,23 @@ export default async function handler(req, res) {
         }))
     ];
 
-    if (!stream) {
-      const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: safeMessages,
-          temperature: thinking ? 0.6 : modelConfig.temperature,
-          top_p: 0.95,
-          max_tokens: thinking ? Math.max(modelConfig.maxTokens, 900) : modelConfig.maxTokens,
-          stream: false
-        })
-      });
+    const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: safeMessages,
+        temperature: thinking ? Math.max(modeConfig.temperature, 0.5) : modeConfig.temperature,
+        top_p: 0.95,
+        max_tokens: thinking ? Math.max(modeConfig.maxTokens, 900) : modeConfig.maxTokens,
+        stream: Boolean(stream)
+      })
+    });
 
+    if (!stream) {
       const raw = await upstream.text();
 
       if (!upstream.ok) {
@@ -112,7 +113,17 @@ export default async function handler(req, res) {
         });
       }
 
-      const data = JSON.parse(raw);
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        return res.status(500).json({
+          error: "Invalid JSON from NVIDIA",
+          model: selectedModel,
+          details: raw
+        });
+      }
+
       const content =
         data?.choices?.[0]?.message?.content ||
         data?.choices?.[0]?.text ||
@@ -124,22 +135,6 @@ export default async function handler(req, res) {
         label: modelConfig.label
       });
     }
-
-    const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: selectedModel,
-        messages: safeMessages,
-        temperature: thinking ? 0.6 : modelConfig.temperature,
-        top_p: 0.95,
-        max_tokens: thinking ? Math.max(modelConfig.maxTokens, 900) : modelConfig.maxTokens,
-        stream: true
-      })
-    });
 
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text();
