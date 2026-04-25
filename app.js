@@ -9,26 +9,30 @@ const newChatBtn = document.getElementById("newChatBtn");
 const chatList = document.getElementById("chatList");
 const chatTitle = document.getElementById("chatTitle");
 const sendBtn = document.getElementById("sendBtn");
+const fastModeBtn = document.getElementById("fastModeBtn");
+const smartModeBtn = document.getElementById("smartModeBtn");
 
-const STORAGE_KEY = "nvidia-ai-chat-v3-stream";
+const STORAGE_KEY = "nvidia-ai-chat-v4-ui";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
 if (!state || !Array.isArray(state.chats) || !state.chats.length) {
   state = {
     activeChatId: null,
-    chats: []
+    chats: [],
+    mode: "fast"
   };
 }
 
 let currentController = null;
 let requestInFlight = false;
 
+marked.setOptions({
+  breaks: true,
+  gfm: true
+});
+
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function defaultTitle(text = "Новий чат") {
-  return text.trim().slice(0, 36) || "Новий чат";
 }
 
 function saveState() {
@@ -37,6 +41,13 @@ function saveState() {
 
 function getActiveChat() {
   return state.chats.find(c => c.id === state.activeChatId) || null;
+}
+
+function buildTitleFromText(text) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "Новий чат";
+  if (clean.length <= 42) return clean;
+  return clean.slice(0, 42) + "...";
 }
 
 function createChat(initialTitle = "Новий чат") {
@@ -63,7 +74,7 @@ function ensureChat() {
 function updateChatTitle(chatObj) {
   const firstUser = chatObj.messages.find(m => m.role === "user");
   if (firstUser) {
-    chatObj.title = defaultTitle(firstUser.content);
+    chatObj.title = buildTitleFromText(firstUser.content);
   }
 }
 
@@ -94,6 +105,49 @@ function formatDate(ts) {
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
+  });
+}
+
+function escapeHtml(str) {
+  return str
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function renderMarkdown(text) {
+  const raw = marked.parse(text || "");
+  return raw;
+}
+
+function enhanceCodeBlocks(container) {
+  container.querySelectorAll("pre code").forEach((block) => {
+    hljs.highlightElement(block);
+
+    const pre = block.parentElement;
+    if (!pre || pre.querySelector(".copy-btn")) return;
+
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "Copy";
+
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(block.innerText);
+        btn.textContent = "Copied!";
+        setTimeout(() => {
+          btn.textContent = "Copy";
+        }, 1200);
+      } catch {
+        btn.textContent = "Error";
+        setTimeout(() => {
+          btn.textContent = "Copy";
+        }, 1200);
+      }
+    });
+
+    pre.appendChild(btn);
   });
 }
 
@@ -143,10 +197,35 @@ function renderChatList() {
 function renderMessage(role, content) {
   const el = document.createElement("div");
   el.className = `message ${role}`;
-  el.textContent = content;
-  chat.appendChild(el);
+
+  if (role === "assistant") {
+    const inner = document.createElement("div");
+    inner.className = "message-content";
+    inner.innerHTML = renderMarkdown(content || "");
+    el.appendChild(inner);
+    chat.appendChild(el);
+    enhanceCodeBlocks(el);
+  } else {
+    el.textContent = content;
+    chat.appendChild(el);
+  }
+
   chat.scrollTop = chat.scrollHeight;
   return el;
+}
+
+function setAssistantHTML(el, content, typing = false) {
+  el.className = `message assistant ${typing ? "typing" : ""}`;
+  let inner = el.querySelector(".message-content");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "message-content";
+    el.innerHTML = "";
+    el.appendChild(inner);
+  }
+  inner.innerHTML = renderMarkdown(content || "");
+  enhanceCodeBlocks(el);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function renderMessages() {
@@ -157,7 +236,7 @@ function renderMessages() {
   if (!active.messages.length) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
-    empty.textContent = "Почни новий чат. Для швидкості краще використовувати DeepSeek V4 Flash без Thinking.";
+    empty.textContent = "Почни новий чат. Режим “Швидко” дає коротші відповіді, “Розумно” — довші і сильніші.";
     chat.appendChild(empty);
     return;
   }
@@ -170,6 +249,7 @@ function renderMessages() {
 function renderAll() {
   renderChatList();
   renderMessages();
+  applyModeButtons();
 }
 
 function autoResize() {
@@ -185,7 +265,7 @@ function getModelTimeout(model) {
   if (model === "deepseek-ai/deepseek-v4-flash") return 60000;
   if (model === "mistralai/devstral-2-123b-instruct-2512") return 90000;
   if (model === "bytedance/seed-oss-36b-instruct") return 120000;
-  if (model === "z-ai/glm4-7") return 120000;
+  if (model === "z-ai/glm5-1") return 120000;
   if (model === "mistralai/mistral-large-3-675b-instruct-2512") return 180000;
   if (model === "deepseek-ai/deepseek-v4-pro") return 180000;
   if (model === "deepseek-ai/deepseek-v3-2") return 180000;
@@ -198,6 +278,36 @@ function setBusy(isBusy) {
   stopBtn.disabled = !isBusy;
   sendBtn.textContent = isBusy ? "Генерується..." : "Надіслати";
 }
+
+function applyModeButtons() {
+  const mode = state.mode || "fast";
+  fastModeBtn.classList.toggle("active", mode === "fast");
+  smartModeBtn.classList.toggle("active", mode === "smart");
+}
+
+function getModePayload() {
+  const mode = state.mode || "fast";
+  if (mode === "smart") {
+    return {
+      responseMode: "smart"
+    };
+  }
+  return {
+    responseMode: "fast"
+  };
+}
+
+fastModeBtn.addEventListener("click", () => {
+  state.mode = "fast";
+  saveState();
+  applyModeButtons();
+});
+
+smartModeBtn.addEventListener("click", () => {
+  state.mode = "smart";
+  saveState();
+  applyModeButtons();
+});
 
 newChatBtn.addEventListener("click", () => {
   if (requestInFlight) return;
@@ -248,8 +358,15 @@ form.addEventListener("submit", async (e) => {
   promptInput.value = "";
   autoResize();
 
-  const assistantEl = renderMessage("assistant", "");
-  assistantEl.classList.add("typing");
+  const assistantEl = document.createElement("div");
+  assistantEl.className = "message assistant typing";
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.innerHTML = "<p>Думаю...</p>";
+  assistantEl.appendChild(inner);
+  chat.appendChild(assistantEl);
+  chat.scrollTop = chat.scrollHeight;
+
   setBusy(true);
 
   try {
@@ -265,7 +382,8 @@ form.addEventListener("submit", async (e) => {
         model: modelSelect.value,
         thinking: thinkingCheckbox.checked,
         messages: trimMessages(active.messages, 10),
-        stream: true
+        stream: true,
+        ...getModePayload()
       }),
       signal: currentController.signal
     });
@@ -311,14 +429,13 @@ form.addEventListener("submit", async (e) => {
 
         if (parsed.type === "meta" && parsed.label) {
           label = `[${parsed.label}]\n\n`;
-          assistantEl.textContent = label + finalText;
+          setAssistantHTML(assistantEl, label + finalText, true);
           continue;
         }
 
         if (parsed.type === "content" && parsed.content) {
           finalText += parsed.content;
-          assistantEl.textContent = label + finalText;
-          chat.scrollTop = chat.scrollHeight;
+          setAssistantHTML(assistantEl, label + finalText, true);
         }
 
         if (parsed.type === "error") {
@@ -341,9 +458,9 @@ form.addEventListener("submit", async (e) => {
   } catch (error) {
     assistantEl.classList.remove("typing");
     if (error.name === "AbortError") {
-      assistantEl.textContent = "Зупинено.";
+      setAssistantHTML(assistantEl, "Зупинено.");
     } else {
-      assistantEl.textContent = "Помилка: " + (error.message || "невідома помилка");
+      setAssistantHTML(assistantEl, "Помилка: " + (error.message || "невідома помилка"));
     }
   } finally {
     setBusy(false);
