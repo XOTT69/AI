@@ -117,7 +117,10 @@ function formatDate(ts) {
 }
 
 function renderMarkdown(text) {
-  return marked.parse(text || "");
+  const raw = marked.parse(text || "");
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true }
+  });
 }
 
 function enhanceCodeBlocks(container) {
@@ -318,16 +321,17 @@ async function* parseSSEStream(stream) {
 
       buffer += decoder.decode(value, { stream: true });
 
-      const messages = buffer.split("\n\n");
-      buffer = messages.pop() ?? "";
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
 
-      for (const message of messages) {
-        const lines = message.split("\n");
+      for (const event of events) {
+        const lines = event.split("\n");
         let dataLines = [];
 
         for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          dataLines.push(line.slice(5).trim());
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          dataLines.push(trimmed.slice(5).trim());
         }
 
         const data = dataLines.join("");
@@ -350,8 +354,9 @@ async function* parseSSEStream(stream) {
       let dataLines = [];
 
       for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        dataLines.push(line.slice(5).trim());
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        dataLines.push(trimmed.slice(5).trim());
       }
 
       const data = dataLines.join("");
@@ -433,7 +438,7 @@ form.addEventListener("submit", async (e) => {
 
   const inner = document.createElement("div");
   inner.className = "message-content";
-  inner.innerHTML = "<p>Думаю...</p>";
+  inner.innerHTML = renderMarkdown("Думаю...");
   assistantEl.appendChild(inner);
 
   chat.appendChild(assistantEl);
@@ -475,7 +480,7 @@ form.addEventListener("submit", async (e) => {
     let gotAnyContent = false;
 
     for await (const event of parseSSEStream(response.body)) {
-      if (event.type === "__done__") {
+      if (event.type === "__done__" || event.type === "done") {
         assistantEl.classList.remove("typing");
         continue;
       }
@@ -490,6 +495,10 @@ form.addEventListener("submit", async (e) => {
         gotAnyContent = true;
         finalText += event.content || "";
         setAssistantHTML(assistantEl, label + finalText, true);
+        continue;
+      }
+
+      if (event.type === "reasoning") {
         continue;
       }
 
