@@ -23,6 +23,10 @@ if (!state || !Array.isArray(state.chats) || !state.chats.length) {
   };
 }
 
+if (!state.mode) {
+  state.mode = "fast";
+}
+
 let currentController = null;
 let requestInFlight = false;
 
@@ -44,7 +48,7 @@ function getActiveChat() {
 }
 
 function buildTitleFromText(text) {
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
   if (!clean) return "Новий чат";
   if (clean.length <= 42) return clean;
   return clean.slice(0, 42) + "...";
@@ -58,6 +62,7 @@ function createChat(initialTitle = "Новий чат") {
     updatedAt: Date.now(),
     messages: []
   };
+
   state.chats.unshift(chatObj);
   state.activeChatId = chatObj.id;
   saveState();
@@ -80,13 +85,16 @@ function updateChatTitle(chatObj) {
 
 function deleteChat(chatId) {
   state.chats = state.chats.filter(c => c.id !== chatId);
+
   if (state.activeChatId === chatId) {
     state.activeChatId = state.chats[0]?.id || null;
   }
+
   if (!state.chats.length) {
     createChat("Новий чат");
     return;
   }
+
   saveState();
   renderAll();
 }
@@ -108,21 +116,16 @@ function formatDate(ts) {
   });
 }
 
-function escapeHtml(str) {
-  return str
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
 function renderMarkdown(text) {
-  const raw = marked.parse(text || "");
-  return raw;
+  return marked.parse(text || "");
 }
 
 function enhanceCodeBlocks(container) {
   container.querySelectorAll("pre code").forEach((block) => {
-    hljs.highlightElement(block);
+    if (!block.dataset.hljsDone) {
+      hljs.highlightElement(block);
+      block.dataset.hljsDone = "1";
+    }
 
     const pre = block.parentElement;
     if (!pre || pre.querySelector(".copy-btn")) return;
@@ -190,32 +193,39 @@ function renderChatList() {
     actions.append(openBtn, removeBtn);
     div.append(title, meta, actions);
     div.onclick = () => switchChat(item.id);
+
     chatList.appendChild(div);
   }
 }
 
-function renderMessage(role, content) {
+function renderUserMessage(content) {
   const el = document.createElement("div");
-  el.className = `message ${role}`;
-
-  if (role === "assistant") {
-    const inner = document.createElement("div");
-    inner.className = "message-content";
-    inner.innerHTML = renderMarkdown(content || "");
-    el.appendChild(inner);
-    chat.appendChild(el);
-    enhanceCodeBlocks(el);
-  } else {
-    el.textContent = content;
-    chat.appendChild(el);
-  }
-
+  el.className = "message user";
+  el.textContent = content;
+  chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
 }
 
+function renderAssistantMessage(content) {
+  const el = document.createElement("div");
+  el.className = "message assistant";
+
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.innerHTML = renderMarkdown(content || "");
+
+  el.appendChild(inner);
+  chat.appendChild(el);
+  enhanceCodeBlocks(el);
+  chat.scrollTop = chat.scrollHeight;
+
+  return el;
+}
+
 function setAssistantHTML(el, content, typing = false) {
-  el.className = `message assistant ${typing ? "typing" : ""}`;
+  el.className = `message assistant${typing ? " typing" : ""}`;
+
   let inner = el.querySelector(".message-content");
   if (!inner) {
     inner = document.createElement("div");
@@ -223,6 +233,7 @@ function setAssistantHTML(el, content, typing = false) {
     el.innerHTML = "";
     el.appendChild(inner);
   }
+
   inner.innerHTML = renderMarkdown(content || "");
   enhanceCodeBlocks(el);
   chat.scrollTop = chat.scrollHeight;
@@ -242,7 +253,11 @@ function renderMessages() {
   }
 
   for (const msg of active.messages) {
-    renderMessage(msg.role === "assistant" ? "assistant" : "user", msg.content);
+    if (msg.role === "assistant") {
+      renderAssistantMessage(msg.content);
+    } else {
+      renderUserMessage(msg.content);
+    }
   }
 }
 
@@ -257,15 +272,15 @@ function autoResize() {
   promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
 }
 
-function trimMessages(messages, maxItems = 10) {
+function trimMessages(messages, maxItems = 12) {
   return messages.slice(-maxItems);
 }
 
 function getModelTimeout(model) {
-  if (model === "deepseek-ai/deepseek-v4-flash") return 60000;
-  if (model === "mistralai/devstral-2-123b-instruct-2512") return 90000;
-  if (model === "bytedance/seed-oss-36b-instruct") return 120000;
-  if (model === "z-ai/glm5-1") return 120000;
+  if (model === "deepseek-ai/deepseek-v4-flash") return 90000;
+  if (model === "mistralai/devstral-2-123b-instruct-2512") return 120000;
+  if (model === "bytedance/seed-oss-36b-instruct") return 140000;
+  if (model === "z-ai/glm5-1") return 140000;
   if (model === "mistralai/mistral-large-3-675b-instruct-2512") return 180000;
   if (model === "deepseek-ai/deepseek-v4-pro") return 180000;
   if (model === "deepseek-ai/deepseek-v3-2") return 180000;
@@ -286,15 +301,70 @@ function applyModeButtons() {
 }
 
 function getModePayload() {
-  const mode = state.mode || "fast";
-  if (mode === "smart") {
-    return {
-      responseMode: "smart"
-    };
-  }
   return {
-    responseMode: "fast"
+    responseMode: state.mode === "smart" ? "smart" : "fast"
   };
+}
+
+async function* parseSSEStream(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const messages = buffer.split("\n\n");
+      buffer = messages.pop() ?? "";
+
+      for (const message of messages) {
+        const lines = message.split("\n");
+        let dataLines = [];
+
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          dataLines.push(line.slice(5).trim());
+        }
+
+        const data = dataLines.join("");
+        if (!data) continue;
+
+        if (data === "[DONE]") {
+          yield { type: "__done__" };
+          continue;
+        }
+
+        try {
+          yield JSON.parse(data);
+        } catch {
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const lines = buffer.split("\n");
+      let dataLines = [];
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        dataLines.push(line.slice(5).trim());
+      }
+
+      const data = dataLines.join("");
+      if (data && data !== "[DONE]") {
+        try {
+          yield JSON.parse(data);
+        } catch {
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 fastModeBtn.addEventListener("click", () => {
@@ -360,18 +430,24 @@ form.addEventListener("submit", async (e) => {
 
   const assistantEl = document.createElement("div");
   assistantEl.className = "message assistant typing";
+
   const inner = document.createElement("div");
   inner.className = "message-content";
   inner.innerHTML = "<p>Думаю...</p>";
   assistantEl.appendChild(inner);
+
   chat.appendChild(assistantEl);
   chat.scrollTop = chat.scrollHeight;
 
   setBusy(true);
 
+  let timeoutId = null;
+
   try {
     currentController = new AbortController();
-    const timeoutId = setTimeout(() => currentController.abort(), getModelTimeout(modelSelect.value));
+    timeoutId = setTimeout(() => {
+      if (currentController) currentController.abort();
+    }, getModelTimeout(modelSelect.value));
 
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -381,72 +457,60 @@ form.addEventListener("submit", async (e) => {
       body: JSON.stringify({
         model: modelSelect.value,
         thinking: thinkingCheckbox.checked,
-        messages: trimMessages(active.messages, 10),
+        messages: trimMessages(active.messages, 12),
         stream: true,
         ...getModePayload()
       }),
       signal: currentController.signal
     });
 
-    clearTimeout(timeoutId);
-
     if (!response.ok || !response.body) {
       const raw = await response.text();
       throw new Error(raw || `HTTP ${response.status}`);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let finalText = "";
     let label = "";
+    let finishReason = null;
+    let gotAnyContent = false;
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    for await (const event of parseSSEStream(response.body)) {
+      if (event.type === "__done__") {
+        assistantEl.classList.remove("typing");
+        continue;
+      }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      if (event.type === "meta" && event.label) {
+        label = `[${event.label}]\n\n`;
+        setAssistantHTML(assistantEl, label + finalText, true);
+        continue;
+      }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
+      if (event.type === "content") {
+        gotAnyContent = true;
+        finalText += event.content || "";
+        setAssistantHTML(assistantEl, label + finalText, true);
+        continue;
+      }
 
-        const data = trimmed.slice(5).trim();
+      if (event.type === "finish") {
+        finishReason = event.finish_reason || null;
+        continue;
+      }
 
-        if (data === "[DONE]") {
-          assistantEl.classList.remove("typing");
-          continue;
-        }
-
-        let parsed;
-        try {
-          parsed = JSON.parse(data);
-        } catch {
-          continue;
-        }
-
-        if (parsed.type === "meta" && parsed.label) {
-          label = `[${parsed.label}]\n\n`;
-          setAssistantHTML(assistantEl, label + finalText, true);
-          continue;
-        }
-
-        if (parsed.type === "content" && parsed.content) {
-          finalText += parsed.content;
-          setAssistantHTML(assistantEl, label + finalText, true);
-        }
-
-        if (parsed.type === "error") {
-          throw new Error(parsed.message || "Streaming error");
-        }
+      if (event.type === "error") {
+        throw new Error(event.message || "Streaming error");
       }
     }
 
     assistantEl.classList.remove("typing");
 
-    if (!finalText.trim()) {
+    if (finishReason === "length") {
+      finalText += "\n\n_Відповідь обрізана через ліміт довжини. Напиши: `продовжуй`._";
+      setAssistantHTML(assistantEl, label + finalText, false);
+    }
+
+    if (!gotAnyContent || !finalText.trim()) {
       throw new Error("Модель повернула порожню відповідь");
     }
 
@@ -457,12 +521,14 @@ form.addEventListener("submit", async (e) => {
     renderAll();
   } catch (error) {
     assistantEl.classList.remove("typing");
+
     if (error.name === "AbortError") {
       setAssistantHTML(assistantEl, "Зупинено.");
     } else {
       setAssistantHTML(assistantEl, "Помилка: " + (error.message || "невідома помилка"));
     }
   } finally {
+    if (timeoutId) clearTimeout(timeoutId);
     setBusy(false);
     currentController = null;
   }
