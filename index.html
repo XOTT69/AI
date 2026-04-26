@@ -2,121 +2,497 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AI Chat — Sync & Vision</title>
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Chat PWA</title>
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI Chat">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
-  
-  <link rel="stylesheet" href="/style.css">
-  <!-- config.js видалено для безпеки -->
+
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent-2: #2563eb;
+      --danger: #ef4444;
+      --border: rgba(255,255,255,.08);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      height: 100%;
+    }
+
+    body.no-scroll {
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: #0f172a;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .sidebar-header,
+    .sidebar-footer {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-footer {
+      border-bottom: 0;
+      border-top: 1px solid var(--border);
+      margin-top: auto;
+    }
+
+    .chat-list {
+      padding: 10px;
+      overflow: auto;
+      flex: 1;
+    }
+
+    .chat-item {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,.02);
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+
+    .chat-item.active {
+      border-color: rgba(59,130,246,.7);
+      background: rgba(59,130,246,.12);
+    }
+
+    .chat-item-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .chat-item-meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(11,18,32,.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .topbar-left,
+    .topbar-right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .hamburger {
+      display: none;
+      border: 0;
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 18px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    select, textarea, button {
+      font: inherit;
+    }
+
+    select, textarea {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    select {
+      padding: 10px 12px;
+      min-height: 44px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 10px 14px;
+      min-height: 44px;
+      cursor: pointer;
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+    }
+
+    .btn.primary:hover {
+      background: var(--accent-2);
+    }
+
+    .btn.danger {
+      background: rgba(239,68,68,.18);
+      color: #fecaca;
+    }
+
+    .btn.small {
+      min-height: 38px;
+      padding: 8px 12px;
+    }
+
+    .btn.active {
+      outline: 2px solid rgba(59,130,246,.5);
+    }
+
+    .chat-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 18px 14px 110px;
+      max-width: 980px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .chat-empty {
+      color: var(--muted);
+      text-align: center;
+      margin-top: 24px;
+    }
+
+    .message {
+      display: flex;
+      margin-bottom: 14px;
+    }
+
+    .message.user {
+      justify-content: flex-end;
+    }
+
+    .message.assistant {
+      justify-content: flex-start;
+    }
+
+    .message-content {
+      max-width: min(780px, 92%);
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.5;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    .message.user .message-content {
+      background: #2563eb;
+      color: white;
+      border-bottom-right-radius: 6px;
+    }
+
+    .message.assistant .message-content {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 6px;
+    }
+
+    .inline-preview-image {
+      display: block;
+      margin-top: 10px;
+      max-width: 100%;
+      border-radius: 12px;
+    }
+
+    .composer {
+      position: fixed;
+      left: 290px;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(to top, rgba(11,18,32,1), rgba(11,18,32,.96));
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      z-index: 30;
+    }
+
+    .composer-inner {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    .selected-image-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px;
+    }
+
+    .selected-image-bar.hidden {
+      display: none;
+    }
+
+    .selected-image-bar img {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    textarea {
+      width: 100%;
+      resize: none;
+      min-height: 52px;
+      max-height: 220px;
+      padding: 14px 16px;
+    }
+
+    .icon-btn {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      border: 0;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .auth-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-card img {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+    }
+
+    .install-btn {
+      background: #10b981;
+      color: white;
+    }
+
+    .mobile-overlay {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: -100%;
+        width: 86%;
+        max-width: 320px;
+        z-index: 60;
+        transition: left .25s ease;
+      }
+
+      .sidebar.open {
+        left: 0;
+      }
+
+      .mobile-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.45);
+        z-index: 50;
+      }
+
+      .mobile-overlay.show {
+        display: block;
+      }
+
+      .hamburger {
+        display: inline-flex;
+      }
+
+      .composer {
+        left: 0;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      }
+
+      .topbar {
+        padding-top: calc(12px + env(safe-area-inset-top));
+      }
+
+      .chat-wrap {
+        padding: 14px 12px 120px;
+      }
+
+      .input-row {
+        grid-template-columns: auto 1fr auto;
+      }
+
+      .topbar-right {
+        width: 100%;
+      }
+
+      .topbar-right select {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+  </style>
 </head>
 <body>
-  
   <div class="mobile-overlay" id="mobileOverlay"></div>
 
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <h2>Мої Чати</h2>
-      <button type="button" class="btn primary" id="newChatBtn">Новий чат</button>
-    </div>
-
-    <div class="chat-list" id="chatList"></div>
-
-    <div class="sidebar-footer">
-      <div id="authLoggedOut" class="auth-section">
-        <p class="auth-hint">Увійди для синхронізації:</p>
-        <button type="button" class="btn" id="googleLoginBtn">Увійти через Google</button>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button class="btn primary" id="newChatBtn" type="button">Новий чат</button>
       </div>
 
-      <div id="authLoggedIn" class="auth-section hidden">
-        <div class="user-info">
-          <img id="userAvatar" src="https://placehold.co/40x40/png" alt="Avatar" class="avatar">
-          <div class="user-details">
-            <div id="userName" class="user-name">Користувач</div>
-            <div id="userEmail" class="user-email">email@example.com</div>
+      <div class="chat-list" id="chatList"></div>
+
+      <div class="sidebar-footer">
+        <div class="auth-box" id="authLoggedOut">
+          <button class="btn" id="googleLoginBtn" type="button">Увійти через Google</button>
+        </div>
+
+        <div class="auth-box hidden" id="authLoggedIn">
+          <div class="user-card">
+            <img id="userAvatar" src="https://placehold.co/80x80/png" alt="avatar">
+            <div>
+              <div id="userName">Користувач</div>
+              <div id="userEmail" class="status">email@example.com</div>
+            </div>
+          </div>
+          <button class="btn" id="syncBtn" type="button">Синхронізувати</button>
+          <button class="btn danger" id="logoutBtn" type="button">Вийти</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="hamburger" id="hamburgerBtn" type="button">☰</button>
+          <div>
+            <div id="chatTitle">Новий чат</div>
+            <div class="status" id="statusText">Готово</div>
           </div>
         </div>
-        <div class="auth-actions">
-          <button type="button" class="btn outline" id="syncBtn">Синхронізувати</button>
-          <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
+
+        <div class="topbar-right">
+          <select id="model">
+            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B — Універсальна</option>
+            <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B — Розумна</option>
+            <option value="google/gemma-3-27b-it">Gemma 3 27B — Фото та OCR</option>
+            <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B — Код</option>
+          </select>
+
+          <button class="btn small active" id="fastModeBtn" type="button">Швидко</button>
+          <button class="btn small" id="smartModeBtn" type="button">Розумно</button>
+
+          <label class="status">
+            <input type="checkbox" id="thinking">
+            Глибоке мислення
+          </label>
+
+          <button class="btn install-btn hidden" id="installBtn" type="button">Встановити</button>
+          <button class="btn danger" id="clearBtn" type="button">Очистити</button>
         </div>
-      </div>
-    </div>
-  </aside>
+      </header>
 
-  <main class="main-content">
-    <header class="topbar">
-      <button type="button" class="hamburger-btn" id="hamburgerBtn" onclick="document.getElementById('sidebar').classList.add('open'); document.getElementById('mobileOverlay').classList.add('show'); document.body.classList.add('no-scroll');">
-        ☰
-      </button>
+      <section class="chat-wrap" id="chat">
+        <div class="chat-empty">Напиши повідомлення, і ШІ відповість.</div>
+      </section>
+    </main>
+  </div>
 
-      <div class="chat-header-info">
-        <h3 id="chatTitle">Новий чат</h3>
-        <span class="status-indicator" id="statusText">Завантаження...</span>
-      </div>
-      
-      <div class="topbar-controls">
-        <select id="model" class="control-btn">
-  <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B — Універсальна</option>
-  <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B — Розумна</option>
-  <option value="google/gemma-3-27b-it">Gemma 3 27B — Фото та OCR</option>
-  <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B — Код</option>
-</select>
-
-        <div class="mode-toggles">
-          <button type="button" class="btn small active" id="fastModeBtn">Швидко</button>
-          <button type="button" class="btn small" id="smartModeBtn">Розумно</button>
-        </div>
-
-        <label class="checkbox-label" title="Deep thinking для складних задач">
-          <input type="checkbox" id="thinking"> Глибоке мислення
-        </label>
-
-        <div class="dropdown">
-          <button type="button" class="btn icon-btn" title="Опції чату">⋮</button>
-          <div class="dropdown-menu dropdown-right">
-            <button type="button" id="exportJsonBtn">Експорт в JSON</button>
-            <button type="button" id="exportMdBtn">Експорт в Markdown</button>
-            <hr>
-            <button type="button" id="clearBtn" class="danger">Очистити чат</button>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <div class="chat-container" id="chat">
-      <div class="chat-empty">Ініціалізація...</div>
-    </div>
-
-    <div class="input-area">
+  <div class="composer">
+    <div class="composer-inner">
       <div class="selected-image-bar hidden" id="selectedImageBar">
         <img id="selectedImagePreview" src="" alt="preview">
-        <div class="image-info">
-          <span id="selectedImageName">image.jpg</span>
-          <small id="selectedImageHint">Фото прикріплене.</small>
+        <div>
+          <div id="selectedImageName">image.jpg</div>
+          <div class="status" id="selectedImageHint">Фото прикріплене.</div>
         </div>
-        <button type="button" class="btn-icon danger" id="removeImageBtn" title="Видалити">✕</button>
+        <button class="icon-btn" id="removeImageBtn" type="button">✕</button>
       </div>
 
-      <form id="chatForm" class="input-form">
+      <form id="chatForm">
         <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp" class="hidden">
-        
-        <div class="input-actions-left">
-          <button type="button" class="btn-icon" id="imageBtn" title="Прикріпити фото">🖼️</button>
-        </div>
-
-        <textarea id="prompt" placeholder="Напиши повідомлення... (Shift+Enter для нового рядка)" rows="1" autofocus></textarea>
-        
-        <div class="input-actions-right">
-          <button type="button" class="btn-icon danger" id="stopBtn" title="Зупинити генерацію" disabled>⏹</button>
-          <button type="submit" class="btn primary" id="sendBtn">➤</button>
+        <div class="input-row">
+          <button class="icon-btn" id="imageBtn" type="button">🖼️</button>
+          <textarea id="prompt" rows="1" placeholder="Напиши повідомлення..."></textarea>
+          <button class="icon-btn" id="stopBtn" type="button" disabled>⏹</button>
+          <button class="btn primary" id="sendBtn" type="submit">Надіслати</button>
         </div>
       </form>
     </div>
-  </main>
+  </div>
 
   <script src="/app.js"></script>
 </body>
