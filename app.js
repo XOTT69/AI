@@ -39,13 +39,14 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v5";
+const STORAGE_KEY = "ai-chat-sync-v6";
 
 let currentUser = null;
 let selectedImage = null;
 let currentController = null;
 let requestInFlight = false;
 let currentTimeoutId = null;
+let currentAssistantBubble = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
@@ -70,7 +71,7 @@ function saveState() {
 }
 
 function updateStatus(text) {
-  statusText.textContent = text;
+  if (statusText) statusText.textContent = text;
 }
 
 function closeMobileSidebar() {
@@ -133,6 +134,8 @@ function renderMarkdown(text) {
 }
 
 function renderAuthState() {
+  if (!authLoggedOut || !authLoggedIn) return;
+
   if (!currentUser) {
     authLoggedOut.classList.remove("hidden");
     authLoggedIn.classList.add("hidden");
@@ -143,12 +146,13 @@ function renderAuthState() {
   authLoggedIn.classList.remove("hidden");
 
   const meta = currentUser.user_metadata || {};
-  userName.textContent = meta.full_name || meta.name || "Користувач";
-  userEmail.textContent = currentUser.email || "Без email";
-  userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
+  if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
+  if (userEmail) userEmail.textContent = currentUser.email || "Без email";
+  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
 }
 
 function renderChatList() {
+  if (!chatList) return;
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
@@ -212,8 +216,10 @@ function renderChatList() {
 
 function renderMessages() {
   const active = ensureChat();
+  if (!chat) return;
+
   chat.innerHTML = "";
-  chatTitle.textContent = active.title || "Новий чат";
+  if (chatTitle) chatTitle.textContent = active.title || "Новий чат";
 
   if (!active.messages.length) {
     const empty = document.createElement("div");
@@ -256,16 +262,19 @@ function renderAll() {
   renderAuthState();
   renderChatList();
   renderMessages();
-  fastModeBtn.classList.toggle("active", state.mode === "fast");
-  smartModeBtn.classList.toggle("active", state.mode === "smart");
+  fastModeBtn?.classList.toggle("active", state.mode === "fast");
+  smartModeBtn?.classList.toggle("active", state.mode === "smart");
 }
 
 function autoResize() {
+  if (!promptInput) return;
   promptInput.style.height = "auto";
   promptInput.style.height = Math.min(promptInput.scrollHeight, 240) + "px";
 }
 
 function updateSelectedImageUI() {
+  if (!selectedImageBar || !selectedImageName || !selectedImageHint || !selectedImagePreview) return;
+
   if (!selectedImage) {
     selectedImageBar.classList.add("hidden");
     selectedImageName.textContent = "Фото не вибрано";
@@ -282,7 +291,7 @@ function updateSelectedImageUI() {
 
 function clearSelectedImage() {
   selectedImage = null;
-  imageInput.value = "";
+  if (imageInput) imageInput.value = "";
   updateSelectedImageUI();
 }
 
@@ -414,6 +423,24 @@ function addUserMessage(text) {
   return msg;
 }
 
+function addAssistantMessage(text) {
+  const active = ensureChat();
+
+  const msg = {
+    id: uid(),
+    role: "assistant",
+    content: text,
+    createdAt: Date.now()
+  };
+
+  active.messages.push(msg);
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+
+  return msg;
+}
+
 function createAssistantStreamingBubble() {
   const wrap = document.createElement("div");
   wrap.className = "message assistant typing";
@@ -426,13 +453,33 @@ function createAssistantStreamingBubble() {
   chat.appendChild(wrap);
   chat.scrollTop = chat.scrollHeight;
 
-  return { wrap, inner };
+  currentAssistantBubble = { wrap, inner };
+  return currentAssistantBubble;
+}
+
+function removeAssistantStreamingBubble() {
+  if (!currentAssistantBubble) return;
+  currentAssistantBubble.wrap.remove();
+  currentAssistantBubble = null;
 }
 
 function setBusy(isBusy, status = "Готово") {
   requestInFlight = isBusy;
-  sendBtn.disabled = isBusy;
-  stopBtn.disabled = !isBusy;
+  if (sendBtn) sendBtn.disabled = isBusy;
+  if (stopBtn) stopBtn.disabled = !isBusy;
+
+  if (isBusy) {
+    const model = modelSelect?.value || "";
+    if (model.includes("glm")) {
+      updateStatus("GLM думає довше...");
+      return;
+    }
+    if (model.includes("pro") || state.mode === "smart") {
+      updateStatus("Розумний режим може відповідати довше...");
+      return;
+    }
+  }
+
   updateStatus(status);
 }
 
@@ -444,7 +491,7 @@ function trimMessages(messages, maxItems = 12) {
 }
 
 function getModePayload() {
-  let effectiveModel = modelSelect.value;
+  let effectiveModel = modelSelect?.value || "deepseek-ai/deepseek-v4-flash";
 
   if (state.mode === "fast" && effectiveModel.includes("pro")) {
     effectiveModel = "deepseek-ai/deepseek-v4-flash";
@@ -511,24 +558,6 @@ async function* parseSSEStream(stream) {
   }
 }
 
-async function appendAssistantMessage(text) {
-  const active = ensureChat();
-
-  const msg = {
-    id: uid(),
-    role: "assistant",
-    content: text,
-    createdAt: Date.now()
-  };
-
-  active.messages.push(msg);
-  active.updatedAt = Date.now();
-  saveState();
-  renderAll();
-
-  return msg;
-}
-
 function clearCurrentTimeout() {
   if (currentTimeoutId) {
     clearTimeout(currentTimeoutId);
@@ -537,11 +566,17 @@ function clearCurrentTimeout() {
 }
 
 function getTimeoutMs() {
-  const model = modelSelect.value;
+  const model = modelSelect?.value || "";
+
   if (model.includes("flash")) return 30000;
-  if (model.includes("glm")) return 60000;
-  if (model.includes("pro")) return 70000;
-  return 45000;
+  return null;
+}
+
+function getAbortMessage() {
+  if (currentController?.signal?.aborted) {
+    return "Запит зупинено.";
+  }
+  return "Запит перервано.";
 }
 
 async function sendChatMessage(text) {
@@ -558,9 +593,13 @@ async function sendChatMessage(text) {
 
   try {
     currentController = new AbortController();
-    currentTimeoutId = setTimeout(() => {
-      if (currentController) currentController.abort();
-    }, getTimeoutMs());
+
+    const timeoutMs = getTimeoutMs();
+    if (timeoutMs) {
+      currentTimeoutId = setTimeout(() => {
+        if (currentController) currentController.abort();
+      }, timeoutMs);
+    }
 
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -569,7 +608,7 @@ async function sendChatMessage(text) {
       },
       body: JSON.stringify({
         ...getModePayload(),
-        thinking: thinkingCheckbox.checked,
+        thinking: !!thinkingCheckbox?.checked,
         messages: trimMessages(active.messages, 12),
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
@@ -586,16 +625,12 @@ async function sendChatMessage(text) {
       throw new Error(raw || `HTTP ${response.status}`);
     }
 
+    clearSelectedImage();
+
     if (!response.body) {
       const raw = await response.text();
-      if (raw) {
-        contentText = raw;
-      } else {
-        throw new Error("Порожня відповідь сервера");
-      }
+      contentText = raw || "Порожня відповідь";
     } else {
-      clearSelectedImage();
-
       for await (const event of parseSSEStream(response.body)) {
         if (event.type === "__done__" || event.type === "done") continue;
 
@@ -617,24 +652,22 @@ async function sendChatMessage(text) {
     }
 
     clearCurrentTimeout();
-
-    bubble.wrap.classList.remove("typing");
-    bubble.inner.innerHTML = renderMarkdown(contentText || "Порожня відповідь");
-    await appendAssistantMessage(contentText || "Порожня відповідь");
+    removeAssistantStreamingBubble();
+    addAssistantMessage(contentText || "Порожня відповідь");
   } catch (e) {
     clearCurrentTimeout();
     console.error(e);
 
-    bubble.wrap.classList.remove("typing");
+    removeAssistantStreamingBubble();
 
     const msg = String(e?.message || "").toLowerCase();
 
     if (e?.name === "AbortError") {
-      bubble.inner.textContent = "Модель відповідає занадто довго. Спробуй Flash або коротший запит.";
+      addAssistantMessage(getAbortMessage());
     } else if (msg.includes("terminated")) {
-      bubble.inner.textContent = "Сервер обірвав генерацію. Спробуй Flash або вимкни Thinking.";
+      addAssistantMessage("Сервер обірвав генерацію. Спробуй Flash або вимкни Thinking.");
     } else {
-      bubble.inner.textContent = "Помилка: " + (e.message || "невідома помилка");
+      addAssistantMessage("Помилка: " + (e.message || "невідома помилка"));
     }
   } finally {
     clearCurrentTimeout();
@@ -864,7 +897,7 @@ smartModeBtn?.addEventListener("click", () => {
 });
 
 imageBtn?.addEventListener("click", () => {
-  imageInput.click();
+  imageInput?.click();
 });
 
 imageInput?.addEventListener("change", async () => {
@@ -886,8 +919,8 @@ imageInput?.addEventListener("change", async () => {
 
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-generateImageBtn?.addEventListener("click", async () => {
-  const prompt = promptInput.value.trim();
+generateImageBtn?.addEventListener("click", () => {
+  const prompt = promptInput?.value.trim();
   if (!prompt) {
     alert("Спочатку введи опис для генерації зображення.");
     return;
@@ -902,7 +935,7 @@ stopBtn?.addEventListener("click", () => {
 
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const text = promptInput.value.trim();
+  const text = promptInput?.value.trim();
   if (!text || requestInFlight) return;
   await sendChatMessage(text);
 });
@@ -912,7 +945,7 @@ promptInput?.addEventListener("input", autoResize);
 promptInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    form.requestSubmit();
+    form?.requestSubmit();
   }
 });
 
