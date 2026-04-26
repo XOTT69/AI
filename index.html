@@ -1,270 +1,154 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>AI Chat BY Антон</title>
-
-  <link rel="stylesheet" href="style.css" />
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css"
-  />
-</head>
-<body>
-  <div id="mobileOverlay" class="mobile-overlay"></div>
-
-  <div class="app-frame">
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-head">
-        <div>
-          <h2>Чати</h2>
-          <div class="sidebar-subtitle">Supabase sync v2</div>
-        </div>
-
-        <button
-          id="closeSidebarBtn"
-          type="button"
-          class="icon-btn mobile-only"
-          aria-label="Закрити меню"
-        >
-          ✕
-        </button>
-      </div>
-
-      <button id="newChatBtn" type="button" class="primary-btn full-btn">
-        + Новий чат
-      </button>
-
-      <div class="sidebar-card compact-card">
-        <button id="profileToggleBtn" type="button" class="section-toggle">
-          <span>Профіль</span>
-          <span id="profileToggleIcon">−</span>
-        </button>
-
-        <div id="profileSection">
-          <div class="auth-card no-card">
-            <div id="authLoggedOut">
-              <div class="sidebar-label">Авторизація</div>
-              <button id="googleLoginBtn" type="button" class="primary-btn full-btn">
-                Увійти через Google
-              </button>
-            </div>
-
-            <div id="authLoggedIn" class="hidden">
-              <button id="profileMenuBtn" type="button" class="profile-card">
-                <img id="userAvatar" class="user-avatar" alt="avatar" />
-                <div class="user-meta">
-                  <strong id="userName">Користувач</strong>
-                  <span id="userEmail">email@example.com</span>
-                </div>
-                <span class="profile-arrow">›</span>
-              </button>
-
-              <div class="profile-actions compact-actions">
-                <button id="syncBtn" type="button" class="ghost-btn full-btn">
-                  Синхронізувати
-                </button>
-                <button id="logoutBtn" type="button" class="ghost-btn full-btn danger-btn">
-                  Вийти
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-card compact-card">
-        <button id="quickActionsToggleBtn" type="button" class="section-toggle">
-          <span>Швидкі дії</span>
-          <span id="quickActionsToggleIcon">+</span>
-        </button>
-
-        <div id="quickActionsSection" class="hidden">
-          <div class="stack-actions compact-actions">
-            <button id="exportJsonBtn" type="button" class="ghost-btn full-btn">
-              Експорт JSON
-            </button>
-            <button id="exportMdBtn" type="button" class="ghost-btn full-btn">
-              Експорт MD
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-card compact-card">
-        <button id="historyToggleBtn" type="button" class="section-toggle">
-          <span>Історія чатів</span>
-          <span id="historyToggleIcon">−</span>
-        </button>
-
-        <div id="historySection">
-          <div id="chatList" class="chat-list compact-list"></div>
-        </div>
-      </div>
-    </aside>
-
-    <main class="main-shell">
-      <header class="topbar">
-        <div class="topbar-left">
-          <button
-            id="openSidebarBtn"
-            type="button"
-            class="icon-btn mobile-only"
-            aria-label="Відкрити меню"
-          >
-            ☰
-          </button>
-
-          <div>
-            <h1>AI Chat BY Антон</h1>
-            <p id="chatTitle">Новий чат</p>
-          </div>
-        </div>
-
-        <div class="topbar-right">
-          <div class="status-pill">
-            <span class="status-dot"></span>
-            <span id="statusText">Готово</span>
-          </div>
-
-          <button id="clearBtn" type="button" class="ghost-btn desktop-only">
-            Очистити чат
-          </button>
-        </div>
-      </header>
-
-      <section id="chat" class="chat"></section>
-
-      <div id="selectedImageBar" class="selected-image-bar hidden">
-        <div class="selected-image-left">
-          <img id="selectedImagePreview" alt="preview" />
-          <div class="selected-image-meta">
-            <strong id="selectedImageName">Фото не вибрано</strong>
-            <span id="selectedImageHint">
-              Фото буде відправлено разом із наступним повідомленням.
-            </span>
-          </div>
-        </div>
-
-        <button type="button" id="removeImageBtn" class="ghost-btn small-btn">
-          Прибрати
-        </button>
-      </div>
-
-      <form id="chatForm" class="composer">
-        <div class="composer-box">
-          <textarea
-            id="prompt"
-            placeholder="Напиши повідомлення або опиши, яке зображення згенерувати..."
-            rows="1"
-            required
-          ></textarea>
-
-          <div class="composer-bottom">
-            <div class="composer-tools">
-              <button type="button" id="imageBtn" class="ghost-btn round-btn">Фото</button>
-
-              <button type="button" id="generateImageBtn" class="ghost-btn hide-mobile">
-                Згенерувати фото
-              </button>
-
-              <div class="select-wrap">
-                <select id="model">
-                  <option value="deepseek-ai/deepseek-v4-flash" selected>DeepSeek V4 Flash</option>
-                  <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro</option>
-                  <option value="z-ai/glm-5.1">GLM-5.1</option>
-                  <option value="meta/llama-3.2-11b-vision-instruct">Llama 3.2 Vision</option>
-                </select>
-              </div>
-
-              <label class="toggle">
-                <input type="checkbox" id="thinking" />
-                <span>Thinking</span>
-              </label>
-
-              <div class="mode-switch">
-                <button type="button" id="fastModeBtn" class="mode-btn active">Швидко</button>
-                <button type="button" id="smartModeBtn" class="mode-btn">Розумно</button>
-              </div>
-            </div>
-
-            <div class="composer-actions">
-              <button type="button" id="stopBtn" class="ghost-btn danger-btn" disabled>
-                Стоп
-              </button>
-
-              <button type="submit" id="sendBtn" class="send-btn" aria-label="Надіслати">
-                ↑
-              </button>
-            </div>
-          </div>
-        </div>
-      </form>
-    </main>
-  </div>
-
-  <input type="file" id="imageInput" accept="image/*" hidden />
-
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI Chat — Sync & Vision</title>
+  
+  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+  
+  <!-- Markdown & DOMPurify для безпечного відображення коду та тексту -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <!-- Highlight.js для підсвітки синтаксису (за бажанням, можна додати плагін для marked, якщо потрібно) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  
+  <!-- Твої стилі -->
+  <link rel="stylesheet" href="/style.css">
 
   <script>
-    (() => {
-      const sidebarEl = document.getElementById("sidebar");
-      const overlayEl = document.getElementById("mobileOverlay");
-      const openBtn = document.getElementById("openSidebarBtn");
-      const closeBtn = document.getElementById("closeSidebarBtn");
-
-      const profileToggleBtn = document.getElementById("profileToggleBtn");
-      const profileSection = document.getElementById("profileSection");
-      const profileToggleIcon = document.getElementById("profileToggleIcon");
-
-      const quickToggleBtn = document.getElementById("quickActionsToggleBtn");
-      const quickSection = document.getElementById("quickActionsSection");
-      const quickIcon = document.getElementById("quickActionsToggleIcon");
-
-      const historyToggleBtn = document.getElementById("historyToggleBtn");
-      const historySection = document.getElementById("historySection");
-      const historyToggleIcon = document.getElementById("historyToggleIcon");
-
-      function openSidebar() {
-        if (!sidebarEl || !overlayEl) return;
-        sidebarEl.classList.add("open");
-        overlayEl.classList.add("show");
-        document.body.classList.add("no-scroll");
-      }
-
-      function closeSidebar() {
-        if (!sidebarEl || !overlayEl) return;
-        sidebarEl.classList.remove("open");
-        overlayEl.classList.remove("show");
-        document.body.classList.remove("no-scroll");
-      }
-
-      function toggleSection(section, icon) {
-        if (!section || !icon) return;
-        section.classList.toggle("hidden");
-        icon.textContent = section.classList.contains("hidden") ? "+" : "−";
-      }
-
-      openBtn?.addEventListener("click", openSidebar);
-      closeBtn?.addEventListener("click", closeSidebar);
-      overlayEl?.addEventListener("click", closeSidebar);
-
-      profileToggleBtn?.addEventListener("click", () => toggleSection(profileSection, profileToggleIcon));
-      quickToggleBtn?.addEventListener("click", () => toggleSection(quickSection, quickIcon));
-      historyToggleBtn?.addEventListener("click", () => toggleSection(historySection, historyToggleIcon));
-
-      window.addEventListener("resize", () => {
-        if (window.innerWidth > 960) closeSidebar();
-      });
-    })();
+    // Підставляй сюди свої реальні ключі з Supabase (або зберігай у .env і прокидай через Vercel/збірку)
+    window.NEXT_PUBLIC_SUPABASE_URL = "ТУТ_ТВІЙ_SUPABASE_URL";
+    window.NEXT_PUBLIC_SUPABASE_ANON_KEY = "ТУТ_ТВІЙ_SUPABASE_ANON_KEY";
   </script>
+</head>
+<body>
+  
+  <div class="mobile-overlay" id="mobileOverlay"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>Мої Чати</h2>
+      <button type="button" class="btn primary" id="newChatBtn">Новий чат</button>
+    </div>
+
+    <!-- Список чатів -->
+    <div class="chat-list" id="chatList"></div>
+
+    <div class="sidebar-footer">
+      <!-- Блок авторизації: коли користувач НЕ залогінений -->
+      <div id="authLoggedOut" class="auth-section">
+        <p class="auth-hint">Увійди для синхронізації:</p>
+        <button type="button" class="btn" id="googleLoginBtn">Увійти через Google</button>
+      </div>
+
+      <!-- Блок авторизації: коли користувач залогінений -->
+      <div id="authLoggedIn" class="auth-section hidden">
+        <div class="user-info">
+          <img id="userAvatar" src="https://placehold.co/40x40/png" alt="Avatar" class="avatar">
+          <div class="user-details">
+            <div id="userName" class="user-name">Користувач</div>
+            <div id="userEmail" class="user-email">email@example.com</div>
+          </div>
+        </div>
+        <div class="auth-actions">
+          <button type="button" class="btn outline" id="syncBtn">Синхронізувати</button>
+          <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <header class="topbar">
+      <!-- Кнопка гамбургера для мобільних (якщо реалізовано в CSS) -->
+      <button type="button" class="hamburger-btn" id="hamburgerBtn" onclick="document.getElementById('sidebar').classList.add('open'); document.getElementById('mobileOverlay').classList.add('show'); document.body.classList.add('no-scroll');">
+        ☰
+      </button>
+
+      <div class="chat-header-info">
+        <h3 id="chatTitle">Новий чат</h3>
+        <span class="status-indicator" id="statusText">Завантаження...</span>
+      </div>
+      
+      <div class="topbar-controls">
+        <select id="model" class="control-btn">
+          <option value="deepseek-ai/deepseek-v4-flash">DeepSeek Flash (Швидкий)</option>
+          <option value="deepseek-ai/deepseek-v4-pro">DeepSeek Pro (Універсал)</option>
+          <option value="google/gemma-3-27b-it">Gemma 3 27B (Фото і OCR)</option>
+          <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys Llama 70B (Код)</option>
+        </select>
+
+        <div class="mode-toggles">
+          <button type="button" class="btn small active" id="fastModeBtn">Швидко</button>
+          <button type="button" class="btn small" id="smartModeBtn">Розумно</button>
+        </div>
+
+        <label class="checkbox-label" title="Deep thinking для складних задач">
+          <input type="checkbox" id="thinking"> Глибоке мислення
+        </label>
+
+        <!-- Експорт та очищення (Quick Actions) -->
+        <div class="dropdown">
+          <button type="button" class="btn icon-btn" title="Опції чату">⋮</button>
+          <div class="dropdown-menu dropdown-right">
+            <button type="button" id="exportJsonBtn">Експорт в JSON</button>
+            <button type="button" id="exportMdBtn">Експорт в Markdown</button>
+            <hr>
+            <button type="button" id="clearBtn" class="danger">Очистити чат</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="chat-container" id="chat">
+      <div class="chat-empty">Ініціалізація...</div>
+    </div>
+
+    <div class="input-area">
+      <!-- Бар для прикріпленого фото -->
+      <div class="selected-image-bar hidden" id="selectedImageBar">
+        <img id="selectedImagePreview" src="" alt="preview">
+        <div class="image-info">
+          <span id="selectedImageName">image.jpg</span>
+          <small id="selectedImageHint">Фото прикріплене.</small>
+        </div>
+        <button type="button" class="btn-icon danger" id="removeImageBtn" title="Видалити">✕</button>
+      </div>
+
+      <form id="chatForm" class="input-form">
+        <!-- Прихований інпут для файлів -->
+        <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp" class="hidden">
+        
+        <!-- Кнопки зліва від поля вводу -->
+        <div class="input-actions-left">
+          <button type="button" class="btn-icon" id="imageBtn" title="Прикріпити фото">
+            🖼️
+          </button>
+        </div>
+
+        <textarea 
+          id="prompt" 
+          placeholder="Напиши повідомлення... (Shift+Enter для нового рядка)" 
+          rows="1" 
+          autofocus
+        ></textarea>
+        
+        <!-- Кнопки справа від поля вводу -->
+        <div class="input-actions-right">
+          <button type="button" class="btn-icon danger" id="stopBtn" title="Зупинити генерацію" disabled>
+            ⏹
+          </button>
+          <button type="submit" class="btn primary" id="sendBtn">
+            ➤
+          </button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
 </body>
 </html>
