@@ -39,7 +39,7 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v6";
+const STORAGE_KEY = "ai-chat-sync-v7";
 
 let currentUser = null;
 let selectedImage = null;
@@ -474,8 +474,12 @@ function setBusy(isBusy, status = "Готово") {
       updateStatus("GLM думає довше...");
       return;
     }
-    if (model.includes("pro") || state.mode === "smart") {
-      updateStatus("Розумний режим може відповідати довше...");
+    if (model.includes("pro") && state.mode === "smart") {
+      updateStatus("Pro у розумному режимі може відповідати довше...");
+      return;
+    }
+    if (model.includes("pro")) {
+      updateStatus("DeepSeek Pro генерує відповідь...");
       return;
     }
   }
@@ -490,16 +494,13 @@ function trimMessages(messages, maxItems = 12) {
   }));
 }
 
-function getModePayload() {
-  let effectiveModel = modelSelect?.value || "deepseek-ai/deepseek-v4-flash";
-
-  if (state.mode === "fast" && effectiveModel.includes("pro")) {
-    effectiveModel = "deepseek-ai/deepseek-v4-flash";
-  }
+function buildRequestPayload() {
+  const selectedModel = modelSelect?.value || "deepseek-ai/deepseek-v4-flash";
+  const isSmart = state.mode === "smart";
 
   return {
-    model: effectiveModel,
-    responseMode: state.mode === "smart" ? "smart" : "fast"
+    model: selectedModel,
+    thinking: isSmart ? true : !!thinkingCheckbox?.checked
   };
 }
 
@@ -572,13 +573,6 @@ function getTimeoutMs() {
   return null;
 }
 
-function getAbortMessage() {
-  if (currentController?.signal?.aborted) {
-    return "Запит зупинено.";
-  }
-  return "Запит перервано.";
-}
-
 async function sendChatMessage(text) {
   const active = ensureChat();
 
@@ -601,14 +595,16 @@ async function sendChatMessage(text) {
       }, timeoutMs);
     }
 
+    const requestOptions = buildRequestPayload();
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        ...getModePayload(),
-        thinking: !!thinkingCheckbox?.checked,
+        model: requestOptions.model,
+        thinking: requestOptions.thinking,
         messages: trimMessages(active.messages, 12),
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
@@ -663,7 +659,7 @@ async function sendChatMessage(text) {
     const msg = String(e?.message || "").toLowerCase();
 
     if (e?.name === "AbortError") {
-      addAssistantMessage(getAbortMessage());
+      addAssistantMessage("Запит зупинено.");
     } else if (msg.includes("terminated")) {
       addAssistantMessage("Сервер обірвав генерацію. Спробуй Flash або вимкни Thinking.");
     } else {
