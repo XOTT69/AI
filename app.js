@@ -29,70 +29,45 @@ const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportMdBtn = document.getElementById("exportMdBtn");
 
-// Підключення Supabase за допомогою твоїх ключів
+// Ключі Supabase (безпечно тримати на фронтенді)
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
-let sb = null;
+const ALLOWED_MODELS = {
+  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий AI-помічник. Відповідай українською.", fastTokens: 1500, smartTokens: 3000 },
+  "google/gemma-2-27b-it": { system: "Ти швидкий AI-помічник. Відповідай українською.", fastTokens: 1500, smartTokens: 3000 },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Описуй фото українською.", fastTokens: 1500, smartTokens: 3000 },
+  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти програміст-експерт. Відповідай українською.", fastTokens: 2000, smartTokens: 4000 }
+};
 
-if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
+let sb = null;
+if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 } else {
-  sb = {
-    auth: {
-      getSession: async () => ({ data: { session: null }, error: null }),
-      signInWithOAuth: async () => { alert("Supabase не налаштовано"); return { error: new Error("Missing config") }; },
-      signOut: async () => ({ error: null }),
-      onAuthStateChange: () => {}
-    },
-    from: () => ({
-      upsert: async () => ({ error: null }),
-      insert: async () => ({ data: { id: "mock" }, error: null }),
-      select: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }), single: async () => ({ data: { id: "mock" }, error: null }), in: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }) }) }) }) }),
-      delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
-      update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) })
-    })
-  };
+  sb = { auth: { getSession: async () => ({}), onAuthStateChange: () => {} } };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v17";
+const STORAGE_KEY = "ai-chat-sync-v20";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-if (!state || !Array.isArray(state.chats)) {
-  state = { activeChatId: null, chats: [], mode: "fast" };
-}
+if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], mode: "fast" };
 
 marked.setOptions({ breaks: true, gfm: true });
 
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function updateStatus(text) { if (statusText) statusText.textContent = text; }
-
-function closeAllChatMenus() {
-  document.querySelectorAll(".chat-menu.show").forEach(el => el.classList.remove("show"));
-}
-
-function closeMobileSidebar() {
-  if (!sidebar || !mobileOverlay) return;
-  if (window.innerWidth > 960) return;
-  sidebar.classList.remove("open");
-  mobileOverlay.classList.remove("show");
-  document.body.classList.remove("no-scroll");
-}
-
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
 function ensureChat() {
   let active = getActiveChat();
   if (!active) {
-    active = { id: uid(), serverId: null, title: "Новий чат", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+    active = { id: uid(), title: "Новий чат", messages: [] };
     state.chats.unshift(active);
     state.activeChatId = active.id;
     saveState();
@@ -102,21 +77,6 @@ function ensureChat() {
 }
 
 function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text || "")); }
-
-function renderAuthState() {
-  if (!authLoggedOut || !authLoggedIn) return;
-  if (!currentUser) {
-    authLoggedOut.classList.remove("hidden");
-    authLoggedIn.classList.add("hidden");
-    return;
-  }
-  authLoggedOut.classList.add("hidden");
-  authLoggedIn.classList.remove("hidden");
-  const meta = currentUser.user_metadata || {};
-  if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
-  if (userEmail) userEmail.textContent = currentUser.email || "Без email";
-  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
-}
 
 function renderChatList() {
   if (!chatList) return;
@@ -130,40 +90,9 @@ function renderChatList() {
     const meta = document.createElement("div");
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
-    const menuWrap = document.createElement("div");
-    menuWrap.className = "chat-menu-wrap";
-    const menuBtn = document.createElement("button");
-    menuBtn.className = "chat-menu-btn";
-    menuBtn.textContent = "⋯";
-    const menu = document.createElement("div");
-    menu.className = "chat-menu";
     
-    const openBtn = document.createElement("button");
-    openBtn.textContent = "Відкрити";
-    openBtn.onclick = (e) => { e.stopPropagation(); state.activeChatId = item.id; saveState(); renderAll(); closeAllChatMenus(); closeMobileSidebar(); };
-    
-    const delBtn = document.createElement("button");
-    delBtn.textContent = "Видалити";
-    delBtn.className = "danger";
-    delBtn.onclick = (e) => {
-      e.stopPropagation();
-      if(confirm("Видалити чат?")) {
-        state.chats = state.chats.filter(c => c.id !== item.id);
-        if(state.activeChatId === item.id) state.activeChatId = state.chats[0]?.id || null;
-        saveState(); renderAll();
-      }
-    };
-
-    menuBtn.onclick = (e) => {
-      e.stopPropagation();
-      document.querySelectorAll(".chat-menu.show").forEach(el => { if(el !== menu) el.classList.remove("show"); });
-      menu.classList.toggle("show");
-    };
-
-    menu.append(openBtn, delBtn);
-    menuWrap.append(menuBtn, menu);
-    div.append(title, meta, menuWrap);
-    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); closeMobileSidebar(); }};
+    div.append(title, meta);
+    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); }};
     chatList.appendChild(div);
   }
 }
@@ -174,25 +103,13 @@ function renderMessages() {
   chat.innerHTML = "";
   if (chatTitle) chatTitle.textContent = active.title || "Новий чат";
 
-  if (!active.messages.length) {
-    const empty = document.createElement("div");
-    empty.className = "chat-empty";
-    empty.textContent = "Напиши повідомлення, і ШІ відповість.";
-    chat.appendChild(empty);
-    return;
-  }
-
   for (const msg of active.messages) {
     const wrap = document.createElement("div");
     wrap.className = `message ${msg.role}`;
     const inner = document.createElement("div");
     inner.className = "message-content";
 
-    if (msg.role === "assistant") {
-      inner.innerHTML = renderMarkdown(msg.content || "");
-    } else {
-      inner.textContent = msg.content || "";
-    }
+    inner.innerHTML = msg.role === "assistant" ? renderMarkdown(msg.content || "") : (msg.content || "");
     
     if (msg.image?.dataUrl) {
       const img = document.createElement("img");
@@ -207,7 +124,6 @@ function renderMessages() {
 }
 
 function renderAll() {
-  renderAuthState();
   renderChatList();
   renderMessages();
   fastModeBtn?.classList.toggle("active", state.mode === "fast");
@@ -222,15 +138,14 @@ function autoResize() {
 }
 
 function updateSelectedImageUI() {
-  if (!selectedImageBar || !selectedImageName || !selectedImagePreview) return;
+  if (!selectedImageBar) return;
   if (!selectedImage) {
     selectedImageBar.classList.add("hidden");
-    selectedImagePreview.removeAttribute("src");
     return;
   }
   selectedImageBar.classList.remove("hidden");
-  selectedImageName.textContent = selectedImage.name || "Зображення";
-  selectedImagePreview.src = selectedImage.dataUrl;
+  if(selectedImageName) selectedImageName.textContent = selectedImage.name || "Зображення";
+  if(selectedImagePreview) selectedImagePreview.src = selectedImage.dataUrl;
 }
 
 function clearSelectedImage() {
@@ -240,10 +155,9 @@ function clearSelectedImage() {
 }
 
 function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
+    reader.onload = () => resolve(reader.result);
     reader.readAsDataURL(file);
   });
 }
@@ -255,39 +169,59 @@ function setBusy(isBusy, status = "Готово") {
   updateStatus(status);
 }
 
+// Запит на наш безпечний проксі `/api/proxy`, де схований ключ NVIDIA
 async function sendChatMessage(text) {
   if (requestInFlight) return;
+  
   const active = ensureChat();
-  
-  active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage, createdAt: Date.now() });
-  
+  active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage });
   if (active.messages.length === 1) active.title = text.slice(0, 40);
   
   promptInput.value = "";
   autoResize();
   
-  const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
+  const assistantMsg = { id: uid(), role: "assistant", content: "" };
   active.messages.push(assistantMsg);
   renderAll();
   
   setBusy(true, "Генерація...");
-  clearSelectedImage();
+  const modelId = modelSelect?.value || "meta/llama-3.3-70b-instruct";
+  const modelConf = ALLOWED_MODELS[modelId];
+  
+  let safeMessages = [{ role: "system", content: modelConf.system }];
+  const recent = active.messages.slice(-10).filter(m => m.id !== assistantMsg.id);
+  
+  if (selectedImage?.dataUrl && modelId.includes("gemma-3")) {
+    safeMessages.push({
+      role: "user",
+      content: [
+        { type: "text", text: text || "Що на фото?" },
+        { type: "image_url", image_url: { url: selectedImage.dataUrl } }
+      ]
+    });
+  } else {
+    recent.forEach(m => safeMessages.push({ role: m.role, content: m.content }));
+  }
 
+  clearSelectedImage();
   const controller = new AbortController();
   currentController = controller;
 
   try {
-    const response = await fetch("/api/chat", {
+    // ЗВЕРТАЄМОСЯ ДО НАШОГО ПРОКСІ НА VERCEL (не до /api/chat)
+    const response = await fetch("/api/proxy", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       signal: controller.signal,
       body: JSON.stringify({
-        model: modelSelect?.value || "meta/llama-3.3-70b-instruct",
-        thinking: !!thinkingCheckbox?.checked,
-        responseMode: state.mode,
-        stream: true,
-        messages: active.messages.slice(-10).filter(m => m.id !== assistantMsg.id),
-        image: selectedImage?.dataUrl ? { dataUrl: selectedImage.dataUrl } : null
+        model: modelId,
+        messages: safeMessages,
+        temperature: state.mode === "smart" ? 0.4 : 0.2,
+        max_tokens: state.mode === "smart" ? modelConf.smartTokens : modelConf.fastTokens,
+        top_p: 0.9,
+        stream: true
       })
     });
 
@@ -314,11 +248,11 @@ async function sendChatMessage(text) {
           if (line.startsWith("data:")) {
             const dataStr = line.slice(5).trim();
             if (dataStr === "[DONE]") continue;
-
             try {
               const parsed = JSON.parse(dataStr);
-              if (parsed.type === "content" && parsed.content) {
-                assistantMsg.content += parsed.content;
+              const delta = parsed?.choices?.[0]?.delta?.content || "";
+              if (delta) {
+                assistantMsg.content += delta;
                 if (targetEl) {
                   targetEl.innerHTML = renderMarkdown(assistantMsg.content);
                   chat.scrollTop = chat.scrollHeight;
@@ -330,52 +264,23 @@ async function sendChatMessage(text) {
       }
     }
   } catch (e) {
-    if (e?.name === "AbortError") {
-      assistantMsg.content += "\n\n*[Генерацію зупинено]*";
-    } else {
-      assistantMsg.content = `Помилка: ${e.message}. NVIDIA сервери можуть бути перевантажені.`;
-    }
+    assistantMsg.content += e.name === "AbortError" ? "\n\n*[Зупинено]*" : `\n\nПомилка: ${e.message}`;
     const msgEls = chat.querySelectorAll('.message.assistant .message-content');
     if(msgEls.length > 0) msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
   } finally {
     currentController = null;
-    active.updatedAt = Date.now();
     saveState();
     renderAll();
     setBusy(false, "Готово");
   }
 }
 
-form?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = promptInput?.value.trim();
-  if (text) sendChatMessage(text);
-});
-
+form?.addEventListener("submit", (e) => { e.preventDefault(); const text = promptInput?.value.trim(); if (text) sendChatMessage(text); });
 promptInput?.addEventListener("input", autoResize);
-promptInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    form?.requestSubmit();
-  }
-});
-
+promptInput?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form?.requestSubmit(); } });
 stopBtn?.addEventListener("click", () => currentController?.abort());
-
-clearBtn?.addEventListener("click", () => { 
-  const active = ensureChat(); 
-  active.messages = []; 
-  active.title = "Новий чат";
-  saveState(); 
-  renderAll(); 
-});
-
-newChatBtn?.addEventListener("click", () => {
-  state.activeChatId = null;
-  ensureChat();
-  renderAll();
-});
-
+clearBtn?.addEventListener("click", () => { ensureChat().messages = []; saveState(); renderAll(); });
+newChatBtn?.addEventListener("click", () => { state.activeChatId = null; ensureChat(); renderAll(); });
 fastModeBtn?.addEventListener("click", () => { state.mode = "fast"; saveState(); renderAll(); });
 smartModeBtn?.addEventListener("click", () => { state.mode = "smart"; saveState(); renderAll(); });
 
@@ -383,38 +288,10 @@ imageBtn?.addEventListener("click", () => imageInput?.click());
 imageInput?.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   if (!file) return;
-  try {
-    const dataUrl = await fileToDataUrl(file);
-    selectedImage = { name: file.name, type: file.type, dataUrl };
-    updateSelectedImageUI();
-  } catch (e) { alert("Помилка фото"); }
+  selectedImage = { name: file.name, dataUrl: await fileToDataUrl(file) };
+  updateSelectedImageUI();
 });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".chat-menu-wrap")) closeAllChatMenus();
-});
-
-sb.auth.onAuthStateChange(async (_event, session) => {
-  currentUser = session?.user || null;
-  renderAuthState();
-});
-
 renderAll();
 autoResize();
-updateSelectedImageUI();
-updateStatus("Готово");
-
-sb.auth.getSession().then(({data}) => {
-  currentUser = data?.session?.user || null;
-  renderAuthState();
-}).catch(()=>{});
-
-googleLoginBtn?.addEventListener("click", async () => {
-  await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" }});
-});
-logoutBtn?.addEventListener("click", async () => {
-  await sb.auth.signOut();
-  currentUser = null;
-  renderAuthState();
-});
