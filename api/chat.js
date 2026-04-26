@@ -1,15 +1,15 @@
 const ALLOWED_MODELS = {
-  "deepseek-ai/deepseek-r1": {
-    label: "DeepSeek R1 — Розумний",
-    system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно і структуровано.",
-    fast: { maxTokens: 2000, temperature: 0.3 },
-    smart: { maxTokens: 4000, temperature: 0.6 }
-  },
-  "deepseek-ai/deepseek-v3": {
-    label: "DeepSeek V3 — Швидкий",
+  "deepseek-ai/deepseek-v4-flash": {
+    label: "DeepSeek V4 Flash — Швидкий",
     system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
     fast: { maxTokens: 1500, temperature: 0.15 },
     smart: { maxTokens: 2500, temperature: 0.3 }
+  },
+  "deepseek-ai/deepseek-v4-pro": {
+    label: "DeepSeek V4 Pro — Розумний",
+    system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно і структуровано.",
+    fast: { maxTokens: 2000, temperature: 0.3 },
+    smart: { maxTokens: 4000, temperature: 0.6 }
   },
   "google/gemma-3-27b-it": {
     label: "Gemma 3 (27B) — Фото й OCR",
@@ -81,13 +81,13 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { messages, model, thinking, stream, responseMode, image } = body;
+    const { messages, model, thinking, responseMode, image } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Messages are required" });
     }
 
-    const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v3";
+    const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v4-flash";
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
       temperature: thinking ? Math.max(modeConfig.temperature, 0.25) : modeConfig.temperature,
       top_p: 0.9,
       max_tokens: thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens,
-      stream: true // Завжди форсуємо стрімінг з боку NVIDIA, якщо клієнт його просить
+      stream: true 
     };
 
     const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
@@ -117,11 +117,10 @@ export default async function handler(req, res) {
       return res.status(upstream.status).json({ error: "NVIDIA API error", details: raw });
     }
 
-    // Встановлюємо заголовки для Server-Sent Events
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no"); // Важливо для Vercel/Nginx стрімінгу
+    res.setHeader("X-Accel-Buffering", "no");
 
     sendSSE(res, { type: "meta", label: modelConfig.label, model: selectedModel });
 
@@ -159,9 +158,7 @@ export default async function handler(req, res) {
                 const json = JSON.parse(payload);
                 const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
                 if (deltaContent) sendSSE(res, { type: "content", content: deltaContent });
-              } catch (err) {
-                // Ігноруємо биті шматки JSON, чекаємо наступних
-              }
+              } catch (err) {}
             }
           }
         }
