@@ -51,7 +51,6 @@ if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
   console.log("Supabase підключено");
 } else {
-  console.warn("Supabase не налаштовано. Працюємо локально.");
   sb = {
     auth: {
       getSession: async () => ({ data: { session: null }, error: null }),
@@ -69,7 +68,7 @@ if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v15";
+const STORAGE_KEY = "ai-chat-sync-v16";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -293,7 +292,7 @@ async function sendChatMessage(text) {
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: modelSelect?.value || "deepseek-ai/deepseek-v4-flash",
+        model: modelSelect?.value || "meta/llama-3.1-8b-instruct",
         thinking: !!thinkingCheckbox?.checked,
         responseMode: state.mode,
         stream: true,
