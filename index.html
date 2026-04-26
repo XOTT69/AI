@@ -2,10 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>AI Chat BY Антон</title>
 
   <link rel="stylesheet" href="style.css" />
@@ -166,32 +163,18 @@
 
           <div class="composer-bottom">
             <div class="composer-tools">
-              <button type="button" id="imageBtn" class="ghost-btn round-btn">
-                Фото
-              </button>
+              <button type="button" id="imageBtn" class="ghost-btn round-btn">Фото</button>
 
-              <button
-                type="button"
-                id="generateImageBtn"
-                class="ghost-btn hide-mobile"
-              >
+              <button type="button" id="generateImageBtn" class="ghost-btn hide-mobile">
                 Згенерувати фото
               </button>
 
               <div class="select-wrap">
                 <select id="model">
-                  <option value="deepseek-ai/deepseek-v4-flash" selected>
-                    DeepSeek V4 Flash
-                  </option>
-                  <option value="deepseek-ai/deepseek-v4-pro">
-                    DeepSeek V4 Pro
-                  </option>
-                  <option value="z-ai/glm-5.1">
-                    GLM-5.1
-                  </option>
-                  <option value="meta/llama-3.2-11b-vision-instruct">
-                    Llama 3.2 Vision
-                  </option>
+                  <option value="deepseek-ai/deepseek-v4-flash" selected>DeepSeek V4 Flash</option>
+                  <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro</option>
+                  <option value="z-ai/glm-5.1">GLM-5.1</option>
+                  <option value="meta/llama-3.2-11b-vision-instruct">Llama 3.2 Vision</option>
                 </select>
               </div>
 
@@ -201,22 +184,13 @@
               </label>
 
               <div class="mode-switch">
-                <button type="button" id="fastModeBtn" class="mode-btn active">
-                  Швидко
-                </button>
-                <button type="button" id="smartModeBtn" class="mode-btn">
-                  Розумно
-                </button>
+                <button type="button" id="fastModeBtn" class="mode-btn active">Швидко</button>
+                <button type="button" id="smartModeBtn" class="mode-btn">Розумно</button>
               </div>
             </div>
 
             <div class="composer-actions">
-              <button
-                type="button"
-                id="stopBtn"
-                class="ghost-btn danger-btn"
-                disabled
-              >
+              <button type="button" id="stopBtn" class="ghost-btn danger-btn" disabled>
                 Стоп
               </button>
 
@@ -241,75 +215,56 @@
   <script src="app.js"></script>
 
   <script>
-    const sidebar = document.getElementById("sidebar");
-    const mobileOverlay = document.getElementById("mobileOverlay");
-    const openSidebarBtn = document.getElementById("openSidebarBtn");
-    const closeSidebarBtn = document.getElementById("closeSidebarBtn");
+    (() => {
+      const sidebarEl = document.getElementById("sidebar");
+      const overlayEl = document.getElementById("mobileOverlay");
+      const openBtn = document.getElementById("openSidebarBtn");
+      const closeBtn = document.getElementById("closeSidebarBtn");
 
-    const profileToggleBtn = document.getElementById("profileToggleBtn");
-    const profileSection = document.getElementById("profileSection");
-    const profileToggleIcon = document.getElementById("profileToggleIcon");
+      const profileToggleBtn = document.getElementById("profileToggleBtn");
+      const profileSection = document.getElementById("profileSection");
+      const profileToggleIcon = document.getElementById("profileToggleIcon");
 
-    const quickActionsToggleBtn = document.getElementById("quickActionsToggleBtn");
-    const quickActionsSection = document.getElementById("quickActionsSection");
-    const quickActionsToggleIcon = document.getElementById("quickActionsToggleIcon");
+      const quickToggleBtn = document.getElementById("quickActionsToggleBtn");
+      const quickSection = document.getElementById("quickActionsSection");
+      const quickIcon = document.getElementById("quickActionsToggleIcon");
 
-    const historyToggleBtn = document.getElementById("historyToggleBtn");
-    const historySection = document.getElementById("historySection");
-    const historyToggleIcon = document.getElementById("historyToggleIcon");
+      const historyToggleBtn = document.getElementById("historyToggleBtn");
+      const historySection = document.getElementById("historySection");
+      const historyToggleIcon = document.getElementById("historyToggleIcon");
 
-    function openSidebar() {
-      sidebar.classList.add("open");
-      mobileOverlay.classList.add("show");
-      document.body.classList.add("no-scroll");
-    }
-
-    function closeSidebar() {
-      sidebar.classList.remove("open");
-      mobileOverlay.classList.remove("show");
-      document.body.classList.remove("no-scroll");
-    }
-
-    function toggleSection(section, icon) {
-      section.classList.toggle("hidden");
-      icon.textContent = section.classList.contains("hidden") ? "+" : "−";
-    }
-
-    if (openSidebarBtn) {
-      openSidebarBtn.addEventListener("click", openSidebar);
-    }
-
-    if (closeSidebarBtn) {
-      closeSidebarBtn.addEventListener("click", closeSidebar);
-    }
-
-    if (mobileOverlay) {
-      mobileOverlay.addEventListener("click", closeSidebar);
-    }
-
-    if (profileToggleBtn) {
-      profileToggleBtn.addEventListener("click", () => {
-        toggleSection(profileSection, profileToggleIcon);
-      });
-    }
-
-    if (quickActionsToggleBtn) {
-      quickActionsToggleBtn.addEventListener("click", () => {
-        toggleSection(quickActionsSection, quickActionsToggleIcon);
-      });
-    }
-
-    if (historyToggleBtn) {
-      historyToggleBtn.addEventListener("click", () => {
-        toggleSection(historySection, historyToggleIcon);
-      });
-    }
-
-    window.addEventListener("resize", () => {
-      if (window.innerWidth > 960) {
-        closeSidebar();
+      function openSidebar() {
+        if (!sidebarEl || !overlayEl) return;
+        sidebarEl.classList.add("open");
+        overlayEl.classList.add("show");
+        document.body.classList.add("no-scroll");
       }
-    });
+
+      function closeSidebar() {
+        if (!sidebarEl || !overlayEl) return;
+        sidebarEl.classList.remove("open");
+        overlayEl.classList.remove("show");
+        document.body.classList.remove("no-scroll");
+      }
+
+      function toggleSection(section, icon) {
+        if (!section || !icon) return;
+        section.classList.toggle("hidden");
+        icon.textContent = section.classList.contains("hidden") ? "+" : "−";
+      }
+
+      openBtn?.addEventListener("click", openSidebar);
+      closeBtn?.addEventListener("click", closeSidebar);
+      overlayEl?.addEventListener("click", closeSidebar);
+
+      profileToggleBtn?.addEventListener("click", () => toggleSection(profileSection, profileToggleIcon));
+      quickToggleBtn?.addEventListener("click", () => toggleSection(quickSection, quickIcon));
+      historyToggleBtn?.addEventListener("click", () => toggleSection(historySection, historyToggleIcon));
+
+      window.addEventListener("resize", () => {
+        if (window.innerWidth > 960) closeSidebar();
+      });
+    })();
   </script>
 </body>
 </html>
