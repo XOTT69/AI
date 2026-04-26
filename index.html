@@ -2,7 +2,6 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <!-- viewport-fit=cover каже Айфону розтягнути фон під чубчик -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AI Chat Mobile</title>
   
@@ -31,8 +30,8 @@
       background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100dvh; /* Динамічна висота для Айфонів */
-      overflow: hidden; /* Заборона прокрутки екрану (скролиться тільки чат) */
+      height: 100dvh;
+      overflow: hidden;
     }
 
     .app-container {
@@ -51,7 +50,6 @@
       flex-shrink: 0;
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 100;
-      /* ФІКС ДЛЯ АЙФОНА: відступи для чубчика і нижньої смужки */
       padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
     }
@@ -64,6 +62,67 @@
       align-items: center;
     }
 
+    /* НАЛАШТУВАННЯ У МЕНЮ (Вибір ШІ) */
+    .sidebar-settings {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.01);
+    }
+
+    .control-btn {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+    }
+
+    .mode-toggles {
+      display: flex;
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      flex: 1;
+    }
+
+    .mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      flex: 1;
+    }
+
+    .mode-btn.active {
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    .checkbox-label {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      background: var(--panel);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    /* СПИСОК ЧАТІВ */
     .chat-list {
       flex: 1;
       overflow-y: auto;
@@ -72,7 +131,10 @@
     }
 
     .chat-item {
-      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
       border-radius: 12px;
       margin-bottom: 8px;
       cursor: pointer;
@@ -82,6 +144,8 @@
 
     .chat-item:hover { background: rgba(255,255,255,.05); }
     .chat-item.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.5); }
+
+    .chat-item-info { flex: 1; overflow: hidden; }
 
     .chat-item-title {
       font-weight: 600;
@@ -94,18 +158,22 @@
 
     .chat-item-meta { color: var(--muted); font-size: 12px; }
 
-    .sidebar-footer {
-      padding: 16px;
-      border-top: 1px solid var(--border);
+    .chat-item-delete {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 6px;
+      display: none; /* Ховаємо на ПК поки немає ховеру */
     }
+    
+    .chat-item:hover .chat-item-delete { display: block; color: #fca5a5; }
+    .chat-item-delete:hover { background: rgba(239,68,68,.2); }
 
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
+    .sidebar-footer { padding: 16px; border-top: 1px solid var(--border); }
+    .user-info { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
     .user-info img { width: 36px; height: 36px; border-radius: 50%; }
     .user-details { overflow: hidden; }
     .user-name { font-size: 14px; font-weight: 600; }
@@ -113,64 +181,31 @@
 
     /* ГОЛОВНА ЗОНА (MAIN) */
     .main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      position: relative;
+      flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative;
     }
 
     /* ВЕРХНЯ ПАНЕЛЬ (TOPBAR) */
     .topbar {
-      /* ФІКС ДЛЯ АЙФОНА: додаємо висоту чубчика до верхнього padding */
-      padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px 16px;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px;
       background: rgba(11,18,32,.9);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      z-index: 10;
-      flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px; z-index: 10; flex-shrink: 0;
     }
 
     .hamburger-btn {
-      display: none;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font-size: 26px;
-      padding: 6px;
-      margin-left: -6px; /* Щоб візуально вирівняти по краю */
-      cursor: pointer;
+      display: none; background: transparent; border: none; color: var(--text);
+      font-size: 26px; padding: 6px; margin-left: -6px; cursor: pointer;
     }
 
     .chat-header-info { flex: 1; min-width: 0; }
     .chat-header-info h3 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status-indicator { font-size: 12px; color: var(--muted); }
 
-    .topbar-controls { display: flex; align-items: center; gap: 8px; }
-    
-    .control-btn {
-      background: var(--panel); color: var(--text); border: 1px solid var(--border);
-      border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none;
-    }
-
-    .mode-toggles { display: flex; background: var(--panel); border-radius: 8px; padding: 2px; border: 1px solid var(--border); }
-    .mode-btn { background: transparent; border: none; color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-    .mode-btn.active { background: var(--panel-2); color: var(--text); }
-    .checkbox-label { font-size: 13px; display: flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
-
     /* ЧАТ (ПОВІДОМЛЕННЯ) */
     .chat-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      scroll-behavior: smooth;
-      -webkit-overflow-scrolling: touch; /* Плавний скрол на iOS */
+      flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column;
+      gap: 16px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
     }
 
     .chat-empty { text-align: center; color: var(--muted); margin-top: 40px; font-size: 14px; }
@@ -179,12 +214,8 @@
     .message.assistant { justify-content: flex-start; }
 
     .message-content {
-      max-width: 85%;
-      padding: 12px 16px;
-      border-radius: 18px;
-      font-size: 15px;
-      line-height: 1.5;
-      word-break: break-word;
+      max-width: 85%; padding: 12px 16px; border-radius: 18px;
+      font-size: 15px; line-height: 1.5; word-break: break-word;
     }
 
     .message.user .message-content { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
@@ -195,12 +226,8 @@
 
     /* ПОЛЕ ВВОДУ (INPUT) */
     .input-area {
-      padding: 12px 16px;
-      background: var(--bg);
-      border-top: 1px solid var(--border);
-      flex-shrink: 0;
-      /* ФІКС ДЛЯ АЙФОНА: підіймаємо над нижньою системною смужкою */
-      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border);
+      flex-shrink: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     }
 
     .selected-image-bar {
@@ -237,7 +264,7 @@
 
     .btn {
       background: var(--panel-2); color: var(--text); border: none; padding: 10px 16px;
-      border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; margin-bottom: 8px;
+      border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%;
     }
     .btn.primary { background: var(--accent); }
     .btn.danger { background: rgba(239,68,68,.2); color: #fca5a5; }
@@ -254,13 +281,12 @@
     @media (max-width: 768px) {
       .sidebar {
         position: fixed; top: 0; left: 0; height: 100dvh;
-        transform: translateX(-100%);
-        box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+        transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5);
       }
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
-      .topbar-controls { display: none; }
       .message-content { max-width: 92%; }
+      .chat-item-delete { display: block; } /* На телефоні завжди показувати хрестик */
     }
   </style>
 </head>
@@ -276,10 +302,29 @@
         <button type="button" class="btn-icon" id="closeSidebarBtn" style="display: none;">✕</button>
       </div>
 
-      <div style="padding: 10px;">
-        <button type="button" class="btn primary" id="newChatBtn">Новий чат</button>
+      <!-- НАЛАШТУВАННЯ ТЕПЕР ТУТ (Доступно і на ПК, і на телефоні) -->
+      <div class="sidebar-settings">
+        <button type="button" class="btn primary" id="newChatBtn" style="margin-bottom: 4px;">Новий чат</button>
+        
+        <select id="model" class="control-btn">
+          <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B — Універсальна</option>
+          <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B — Розумна</option>
+          <option value="google/gemma-3-27b-it">Gemma 3 27B — Фото та OCR</option>
+          <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B — Код</option>
+        </select>
+
+        <div style="display: flex; gap: 8px;">
+          <div class="mode-toggles">
+            <button type="button" class="mode-btn active" id="fastModeBtn">Швидко</button>
+            <button type="button" class="mode-btn" id="smartModeBtn">Розумно</button>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="thinking"> 🧠
+          </label>
+        </div>
       </div>
 
+      <!-- СПИСОК ЧАТІВ -->
       <div class="chat-list" id="chatList"></div>
 
       <div class="sidebar-footer">
@@ -310,25 +355,7 @@
           <span class="status-indicator" id="statusText">Готово</span>
         </div>
         
-        <div class="topbar-controls">
-          <select id="model" class="control-btn">
-            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B — Універсальна</option>
-            <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B — Розумна</option>
-            <option value="google/gemma-3-27b-it">Gemma 3 27B — Фото та OCR</option>
-            <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B — Код</option>
-          </select>
-
-          <div class="mode-toggles">
-            <button type="button" class="mode-btn active" id="fastModeBtn">Швидко</button>
-            <button type="button" class="mode-btn" id="smartModeBtn">Розумно</button>
-          </div>
-
-          <label class="checkbox-label">
-            <input type="checkbox" id="thinking"> Мислення
-          </label>
-          
-          <button type="button" class="control-btn" id="clearBtn" style="color: #fca5a5;">Очистити</button>
-        </div>
+        <button type="button" class="control-btn" id="clearBtn" style="color: #fca5a5; width: auto;">Очистити чат</button>
       </header>
 
       <div class="chat-container" id="chat">
