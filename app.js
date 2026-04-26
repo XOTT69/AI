@@ -25,7 +25,7 @@ const statusText = document.getElementById("statusText");
 
 document.title = "AI Chat BY Антон";
 
-const STORAGE_KEY = "ai-chat-by-anton-v3";
+const STORAGE_KEY = "ai-chat-by-anton-v4";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
 if (!state || !Array.isArray(state.chats) || !state.chats.length) {
@@ -138,7 +138,9 @@ function renderMarkdown(text) {
 function enhanceCodeBlocks(container) {
   container.querySelectorAll("pre code").forEach((block) => {
     if (!block.dataset.hljsDone) {
-      hljs.highlightElement(block);
+      try {
+        hljs.highlightElement(block);
+      } catch {}
       block.dataset.hljsDone = "1";
     }
 
@@ -154,10 +156,14 @@ function enhanceCodeBlocks(container) {
       try {
         await navigator.clipboard.writeText(block.innerText);
         btn.textContent = "Copied!";
-        setTimeout(() => btn.textContent = "Copy", 1200);
+        setTimeout(() => {
+          btn.textContent = "Copy";
+        }, 1200);
       } catch {
         btn.textContent = "Error";
-        setTimeout(() => btn.textContent = "Copy", 1200);
+        setTimeout(() => {
+          btn.textContent = "Copy";
+        }, 1200);
       }
     });
 
@@ -333,7 +339,7 @@ function autoResize() {
   promptInput.style.height = Math.min(promptInput.scrollHeight, 240) + "px";
 }
 
-function trimMessages(messages, maxItems = 12) {
+function trimMessages(messages, maxItems = 10) {
   return messages.slice(-maxItems);
 }
 
@@ -395,6 +401,22 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
     reader.readAsDataURL(file);
   });
+}
+
+function getSuggestedPromptForImage(fileName = "") {
+  const name = String(fileName).toLowerCase();
+
+  if (
+    name.includes("passport") ||
+    name.includes("паспорт") ||
+    name.includes("doc") ||
+    name.includes("document") ||
+    name.includes("id")
+  ) {
+    return "Зроби OCR цього документа. Перепиши весь видимий текст без вигадок і потім витягни основні поля.";
+  }
+
+  return "Опиши, що на цьому зображенні. Якщо є текст — перепиши лише чітко видимий текст без вигадок.";
 }
 
 async function* parseSSEStream(stream) {
@@ -476,15 +498,18 @@ function exportActiveChatJson() {
 function exportActiveChatMd() {
   const active = ensureChat();
   const lines = [`# ${active.title || "Новий чат"}`, ""];
+
   for (const msg of active.messages) {
     lines.push(`## ${msg.role === "user" ? "Користувач" : "Асистент"}`);
     lines.push("");
     lines.push(msg.content || "");
     lines.push("");
+
     if (msg.image?.dataUrl) {
       lines.push("_Повідомлення містить прикріплене фото._");
       lines.push("");
     }
+
     if (msg.kind === "image" && msg.imageUrl) {
       lines.push(`![generated image](${msg.imageUrl})`);
       lines.push("");
@@ -512,6 +537,7 @@ function appendAssistantMessageToState(content, extra = {}) {
 
 async function sendChatMessage(text) {
   const active = ensureChat();
+
   const userMessage = {
     role: "user",
     content: text
@@ -552,6 +578,8 @@ async function sendChatMessage(text) {
       if (currentController) currentController.abort();
     }, getModelTimeout(modelSelect.value));
 
+    const activeForRequest = ensureChat();
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
@@ -560,7 +588,7 @@ async function sendChatMessage(text) {
       body: JSON.stringify({
         model: modelSelect.value,
         thinking: thinkingCheckbox.checked,
-        messages: trimMessages(active.messages, 12),
+        messages: trimMessages(activeForRequest.messages, 10),
         stream: true,
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
@@ -596,7 +624,9 @@ async function sendChatMessage(text) {
         continue;
       }
 
-      if (event.type === "reasoning") continue;
+      if (event.type === "reasoning") {
+        continue;
+      }
 
       if (event.type === "finish") {
         finishReason = event.finish_reason || null;
@@ -688,7 +718,14 @@ async function generateImageFromPrompt(prompt) {
       signal: currentController.signal
     });
 
-    const data = await response.json().catch(() => ({}));
+    const raw = await response.text();
+    let data = {};
+
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { details: raw };
+    }
 
     if (!response.ok) {
       throw new Error(data?.details || data?.error || `HTTP ${response.status}`);
@@ -700,7 +737,8 @@ async function generateImageFromPrompt(prompt) {
     }
 
     assistantEl.classList.remove("typing");
-    assistantEl.querySelector(".message-content").innerHTML = renderMarkdown("Ось згенероване зображення:");
+    assistantEl.querySelector(".message-content").innerHTML =
+      renderMarkdown(`Ось згенероване зображення.\n\nМодель: \`${data?.model || "unknown"}\``);
 
     const wrap = document.createElement("div");
     wrap.className = "generated-image-wrap";
@@ -730,7 +768,7 @@ async function generateImageFromPrompt(prompt) {
     wrap.append(img, actions);
     assistantEl.querySelector(".message-content").appendChild(wrap);
 
-    appendAssistantMessageToState("Ось згенероване зображення:", {
+    appendAssistantMessageToState(`Ось згенероване зображення.\n\nМодель: \`${data?.model || "unknown"}\``, {
       kind: "image",
       imageUrl
     });
@@ -795,6 +833,11 @@ imageInput.addEventListener("change", async () => {
 
     if (modelSelect.value !== "meta/llama-3.2-11b-vision-instruct") {
       modelSelect.value = "meta/llama-3.2-11b-vision-instruct";
+    }
+
+    if (!promptInput.value.trim()) {
+      promptInput.value = getSuggestedPromptForImage(file.name);
+      autoResize();
     }
 
     updateSelectedImageUI();
