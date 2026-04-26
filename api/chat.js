@@ -19,13 +19,23 @@ const ALLOWED_MODELS = {
   },
   "meta/llama-3.2-11b-vision-instruct": {
     label: "Llama 3.2 Vision — Фото й OCR",
-    system: "Ти мультимодальний AI-помічник. Аналізуй фото, скріни, документи, інтерфейси та текст на зображеннях. Відповідай українською, чітко і докладно.",
-    fast: { maxTokens: 1600, temperature: 0.2 },
-    smart: { maxTokens: 2800, temperature: 0.35 }
+    system: [
+      "Ти мультимодальний AI-помічник для точного OCR, аналізу фото, скрінів і документів.",
+      "Відповідай українською.",
+      "Не вигадуй факти, не домислюй невидимий текст, не повторюй блоки тексту.",
+      "Якщо щось не видно або нечитабельно — прямо напиши: нечитабельно.",
+      "Якщо користувач просить OCR або аналіз документа:",
+      "1) Спочатку коротко опиши тип документа.",
+      "2) Потім перепиши видимий текст максимально дослівно без повторів.",
+      "3) Потім дай структурований список полів, лише якщо вони реально видимі.",
+      "4) Не заповнюй пропуски здогадками."
+    ].join(" "),
+    fast: { maxTokens: 1800, temperature: 0.1 },
+    smart: { maxTokens: 3200, temperature: 0.2 }
   }
 };
 
-function trimMessages(messages, maxItems = 12) {
+function trimMessages(messages, maxItems = 10) {
   return messages.slice(-maxItems);
 }
 
@@ -33,30 +43,64 @@ function sendSSE(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function getLastUserMessage(messages) {
+  return [...messages].reverse().find(m => m?.role === "user") || null;
+}
+
+function buildVisionPrompt(userText = "") {
+  const text = String(userText || "").trim().toLowerCase();
+
+  const looksLikeDoc =
+    text.includes("ocr") ||
+    text.includes("документ") ||
+    text.includes("паспорт") ||
+    text.includes("посвідч") ||
+    text.includes("текст") ||
+    text.includes("розпізнай") ||
+    text.includes("що написано");
+
+  if (looksLikeDoc) {
+    return [
+      "Зроби точний OCR цього зображення.",
+      "Формат відповіді:",
+      "1. Тип зображення/документа.",
+      "2. Видимий текст — перепиши дослівно, без повторів і без вигадок.",
+      "3. Поля документа: ПІБ, дата народження, номер документа, дата видачі, адреса, громадянство, інше.",
+      "Для кожного поля, яке не видно чітко, пиши: нечитабельно.",
+      "Не повторюй однакові рядки по кілька разів."
+    ].join("\n");
+  }
+
+  return [
+    userText || "Опиши, що на цьому зображенні.",
+    "",
+    "Якщо на зображенні є текст, перепиши лише чітко видимий текст без вигадок.",
+    "Не повторюй фрагменти."
+  ].join("\n");
+}
+
 function normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image) {
   if (image?.dataUrl && selectedModel === "meta/llama-3.2-11b-vision-instruct") {
-    const lastUserText =
-      recentMessages.filter(m => m.role === "user").slice(-1)[0]?.content ||
-      "Опиши, що на цьому фото.";
-
-    const assistantHistory = recentMessages
-      .filter(m => m.role === "assistant" && typeof m.content === "string")
-      .slice(-4)
-      .map(m => ({
-        role: "assistant",
-        content: m.content
-      }));
+    const lastUser = getLastUserMessage(recentMessages);
+    const visionPrompt = buildVisionPrompt(lastUser?.content || "");
 
     return [
-      { role: "system", content: modelConfig.system },
-      ...assistantHistory,
+      {
+        role: "system",
+        content: modelConfig.system
+      },
       {
         role: "user",
         content: [
-          { type: "text", text: lastUserText },
+          {
+            type: "text",
+            text: visionPrompt
+          },
           {
             type: "image_url",
-            image_url: { url: image.dataUrl }
+            image_url: {
+              url: image.dataUrl
+            }
           }
         ]
       }
@@ -107,7 +151,7 @@ export default async function handler(req, res) {
       : "deepseek-ai/deepseek-v4-pro";
 
     const modelConfig = ALLOWED_MODELS[selectedModel];
-    const recentMessages = trimMessages(messages, 12);
+    const recentMessages = trimMessages(messages, 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
 
     const safeMessages = normalizeMessagesForModel(
@@ -121,11 +165,11 @@ export default async function handler(req, res) {
       model: selectedModel,
       messages: safeMessages,
       temperature: thinking
-        ? Math.max(modeConfig.temperature, 0.5)
+        ? Math.max(modeConfig.temperature, 0.25)
         : modeConfig.temperature,
-      top_p: 0.95,
+      top_p: 0.9,
       max_tokens: thinking
-        ? Math.max(modeConfig.maxTokens, 3000)
+        ? Math.max(modeConfig.maxTokens, 2600)
         : modeConfig.maxTokens,
       stream: Boolean(stream)
     };
