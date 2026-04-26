@@ -1,3 +1,13 @@
+const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  alert("Не заповнений config.js з Supabase URL / ANON KEY");
+}
+
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const chat = document.getElementById("chat");
 const form = document.getElementById("chatForm");
 const promptInput = document.getElementById("prompt");
@@ -22,13 +32,21 @@ const removeImageBtn = document.getElementById("removeImageBtn");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 const statusText = document.getElementById("statusText");
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const syncBtn = document.getElementById("syncBtn");
+const authLoggedOut = document.getElementById("authLoggedOut");
+const authLoggedIn = document.getElementById("authLoggedIn");
+const userAvatar = document.getElementById("userAvatar");
+const userName = document.getElementById("userName");
+const userEmail = document.getElementById("userEmail");
 
 document.title = "AI Chat BY Антон";
 
-const STORAGE_KEY = "ai-chat-by-anton-v4";
+const STORAGE_KEY = "ai-chat-by-anton-v2-supabase";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
-if (!state || !Array.isArray(state.chats) || !state.chats.length) {
+if (!state || !Array.isArray(state.chats)) {
   state = {
     activeChatId: null,
     chats: [],
@@ -41,6 +59,7 @@ if (!state.mode) state.mode = "fast";
 let currentController = null;
 let requestInFlight = false;
 let selectedImage = null;
+let currentUser = null;
 
 marked.setOptions({
   breaks: true,
@@ -55,6 +74,15 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function updateStatus(text) {
+  statusText.textContent = text;
+}
+
+function getURL() {
+  let url = window.location.origin || "http://localhost:3000";
+  return url.endsWith("/") ? url : `${url}/`;
+}
+
 function getActiveChat() {
   return state.chats.find(c => c.id === state.activeChatId) || null;
 }
@@ -66,13 +94,14 @@ function buildTitleFromText(text) {
   return clean.slice(0, 42) + "...";
 }
 
-function createChat(initialTitle = "Новий чат") {
+function createLocalChat(initialTitle = "Новий чат", forcedId = null) {
   const chatObj = {
-    id: uid(),
+    id: forcedId || uid(),
     title: initialTitle,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    messages: []
+    messages: [],
+    serverId: null
   };
 
   state.chats.unshift(chatObj);
@@ -84,7 +113,7 @@ function createChat(initialTitle = "Новий чат") {
 
 function ensureChat() {
   let active = getActiveChat();
-  if (!active) active = createChat("Новий чат");
+  if (!active) active = createLocalChat("Новий чат");
   return active;
 }
 
@@ -95,27 +124,35 @@ function updateChatTitle(chatObj) {
   }
 }
 
-function deleteChat(chatId) {
+function switchChat(chatId) {
+  if (requestInFlight) return;
+  state.activeChatId = chatId;
+  saveState();
+  renderAll();
+}
+
+async function deleteLocalAndServerChat(chatId) {
+  const item = state.chats.find(c => c.id === chatId);
   state.chats = state.chats.filter(c => c.id !== chatId);
 
   if (state.activeChatId === chatId) {
     state.activeChatId = state.chats[0]?.id || null;
   }
 
-  if (!state.chats.length) {
-    createChat("Новий чат");
-    return;
+  saveState();
+  renderAll();
+
+  if (currentUser && item?.serverId) {
+    await supabase
+      .from("chats")
+      .delete()
+      .eq("id", item.serverId)
+      .eq("user_id", currentUser.id);
   }
 
-  saveState();
-  renderAll();
-}
-
-function switchChat(chatId) {
-  if (requestInFlight) return;
-  state.activeChatId = chatId;
-  saveState();
-  renderAll();
+  if (!state.chats.length) {
+    createLocalChat("Новий чат");
+  }
 }
 
 function formatDate(ts) {
@@ -156,23 +193,15 @@ function enhanceCodeBlocks(container) {
       try {
         await navigator.clipboard.writeText(block.innerText);
         btn.textContent = "Copied!";
-        setTimeout(() => {
-          btn.textContent = "Copy";
-        }, 1200);
+        setTimeout(() => btn.textContent = "Copy", 1200);
       } catch {
         btn.textContent = "Error";
-        setTimeout(() => {
-          btn.textContent = "Copy";
-        }, 1200);
+        setTimeout(() => btn.textContent = "Copy", 1200);
       }
     });
 
     pre.appendChild(btn);
   });
-}
-
-function updateStatus(text) {
-  statusText.textContent = text;
 }
 
 function renderChatList() {
@@ -204,10 +233,10 @@ function renderChatList() {
     const removeBtn = document.createElement("button");
     removeBtn.className = "ghost-btn small-btn danger-btn";
     removeBtn.textContent = "Видалити";
-    removeBtn.onclick = (e) => {
+    removeBtn.onclick = async (e) => {
       e.stopPropagation();
       if (confirm("Видалити цей чат?")) {
-        deleteChat(item.id);
+        await deleteLocalAndServerChat(item.id);
       }
     };
 
@@ -221,11 +250,9 @@ function renderChatList() {
 function createMessageShell(role, extraClass = "") {
   const el = document.createElement("div");
   el.className = `message ${role}${extraClass ? ` ${extraClass}` : ""}`;
-
   const inner = document.createElement("div");
   inner.className = "message-content";
   el.appendChild(inner);
-
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
@@ -251,7 +278,6 @@ function renderAssistantMessage(message) {
   const extraClass = message.kind === "image" ? "image-message" : "";
   const el = createMessageShell("assistant", extraClass);
   const inner = el.querySelector(".message-content");
-
   inner.innerHTML = renderMarkdown(message.content || "");
 
   if (message.kind === "image" && message.imageUrl) {
@@ -298,8 +324,7 @@ function setAssistantStreamingText(el, labelText, contentText, typing = false) {
 function finalizeAssistantMarkdown(el, labelText, contentText, typing = false) {
   el.className = `message assistant${typing ? " typing" : ""}`;
   const inner = el.querySelector(".message-content");
-  const merged = `${labelText || ""}${contentText || ""}`;
-  inner.innerHTML = renderMarkdown(merged);
+  inner.innerHTML = renderMarkdown(`${labelText || ""}${contentText || ""}`);
   enhanceCodeBlocks(el);
   chat.scrollTop = chat.scrollHeight;
 }
@@ -312,17 +337,16 @@ function renderMessages() {
   if (!active.messages.length) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
-    empty.textContent = "AI Chat BY Антон готовий. Додано фото, генерацію зображень, експорт і кращий стрімінг.";
+    empty.textContent = currentUser
+      ? "Ти увійшов через Google. Історія синхронізується через Supabase."
+      : "Увійди через Google, щоб історія зберігалась на сервері і синхронізувалась між пристроями.";
     chat.appendChild(empty);
     return;
   }
 
   for (const msg of active.messages) {
-    if (msg.role === "assistant") {
-      renderAssistantMessage(msg);
-    } else {
-      renderUserMessage(msg);
-    }
+    if (msg.role === "assistant") renderAssistantMessage(msg);
+    else renderUserMessage(msg);
   }
 
   chat.scrollTop = chat.scrollHeight;
@@ -340,7 +364,10 @@ function autoResize() {
 }
 
 function trimMessages(messages, maxItems = 10) {
-  return messages.slice(-maxItems);
+  return messages.slice(-maxItems).map((m) => ({
+    role: m.role,
+    content: m.content
+  }));
 }
 
 function getModelTimeout(model) {
@@ -405,7 +432,6 @@ function fileToDataUrl(file) {
 
 function getSuggestedPromptForImage(fileName = "") {
   const name = String(fileName).toLowerCase();
-
   if (
     name.includes("passport") ||
     name.includes("паспорт") ||
@@ -415,7 +441,6 @@ function getSuggestedPromptForImage(fileName = "") {
   ) {
     return "Зроби OCR цього документа. Перепиши весь видимий текст без вигадок і потім витягни основні поля.";
   }
-
   return "Опиши, що на цьому зображенні. Якщо є текст — перепиши лише чітко видимий текст без вигадок.";
 }
 
@@ -454,19 +479,6 @@ async function* parseSSEStream(stream) {
         }
 
         try {
-          const parsed = JSON.parse(data);
-          yield parsed;
-        } catch {}
-      }
-    }
-
-    const tail = buffer.trim();
-    if (tail.startsWith("data:")) {
-      const data = tail.slice(5).trim();
-      if (data === "[DONE]") {
-        yield { type: "__done__" };
-      } else {
-        try {
           yield JSON.parse(data);
         } catch {}
       }
@@ -488,11 +500,7 @@ function downloadFile(filename, content, type) {
 
 function exportActiveChatJson() {
   const active = ensureChat();
-  downloadFile(
-    `${active.title || "chat"}.json`,
-    JSON.stringify(active, null, 2),
-    "application/json"
-  );
+  downloadFile(`${active.title || "chat"}.json`, JSON.stringify(active, null, 2), "application/json");
 }
 
 function exportActiveChatMd() {
@@ -516,23 +524,207 @@ function exportActiveChatMd() {
     }
   }
 
-  downloadFile(
-    `${active.title || "chat"}.md`,
-    lines.join("\n"),
-    "text/markdown;charset=utf-8"
-  );
+  downloadFile(`${active.title || "chat"}.md`, lines.join("\n"), "text/markdown;charset=utf-8");
 }
 
-function appendAssistantMessageToState(content, extra = {}) {
-  const active = ensureChat();
-  active.messages.push({
-    role: "assistant",
-    content,
-    ...extra
+async function ensureProfile(user) {
+  if (!user) return;
+  const meta = user.user_metadata || {};
+
+  await supabase.from("profiles").upsert({
+    id: user.id,
+    email: user.email || null,
+    full_name: meta.full_name || meta.name || null,
+    avatar_url: meta.avatar_url || meta.picture || null,
+    provider: user.app_metadata?.provider || "google",
+    updated_at: new Date().toISOString()
   });
-  active.updatedAt = Date.now();
+}
+
+function mapServerChat(row, messages = []) {
+  return {
+    id: `local-${row.id}`,
+    serverId: row.id,
+    title: row.title || "Новий чат",
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    messages: messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      kind: m.kind || "text",
+      imageUrl: m.image_url || null,
+      image: m.image_data_url ? {
+        name: m.image_name || "image",
+        type: m.image_type || "image/png",
+        dataUrl: m.image_data_url
+      } : null,
+      createdAt: new Date(m.created_at).getTime()
+    }))
+  };
+}
+
+async function loadServerChats() {
+  if (!currentUser) return;
+
+  updateStatus("Завантаження історії");
+
+  const { data: chatsData, error: chatsError } = await supabase
+    .from("chats")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .order("updated_at", { ascending: false });
+
+  if (chatsError) {
+    console.error(chatsError);
+    updateStatus("Помилка sync");
+    return;
+  }
+
+  const chatIds = (chatsData || []).map(c => c.id);
+  let messagesData = [];
+
+  if (chatIds.length) {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .in("chat_id", chatIds)
+      .eq("user_id", currentUser.id)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      updateStatus("Помилка sync");
+      return;
+    }
+
+    messagesData = data || [];
+  }
+
+  const grouped = new Map();
+  for (const msg of messagesData) {
+    if (!grouped.has(msg.chat_id)) grouped.set(msg.chat_id, []);
+    grouped.get(msg.chat_id).push(msg);
+  }
+
+  state.chats = (chatsData || []).map(chatRow =>
+    mapServerChat(chatRow, grouped.get(chatRow.id) || [])
+  );
+
+  if (!state.chats.length) {
+    createLocalChat("Новий чат");
+  } else {
+    state.activeChatId = state.chats[0].id;
+    saveState();
+    renderAll();
+  }
+
+  updateStatus("Готово");
+}
+
+async function ensureServerChat(chatObj) {
+  if (!currentUser) return null;
+  if (chatObj.serverId) return chatObj.serverId;
+
+  const oldId = chatObj.id;
+
+  const { data, error } = await supabase
+    .from("chats")
+    .insert({
+      user_id: currentUser.id,
+      title: chatObj.title || "Новий чат"
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error(error);
+    return null;
+  }
+
+  chatObj.serverId = data.id;
+  chatObj.id = `local-${data.id}`;
+
+  if (state.activeChatId === oldId) {
+    state.activeChatId = chatObj.id;
+  }
+
   saveState();
   renderAll();
+  return data.id;
+}
+
+async function appendMessageToServer(chatObj, message) {
+  if (!currentUser || !chatObj) return;
+
+  const serverId = await ensureServerChat(chatObj);
+  if (!serverId) return;
+
+  await supabase.from("messages").insert({
+    chat_id: serverId,
+    user_id: currentUser.id,
+    role: message.role,
+    content: message.content || "",
+    kind: message.kind || "text",
+    image_url: message.imageUrl || null,
+    image_name: message.image?.name || null,
+    image_type: message.image?.type || null,
+    image_data_url: message.image?.dataUrl || null
+  });
+
+  await supabase
+    .from("chats")
+    .update({
+      title: chatObj.title || "Новий чат",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", serverId)
+    .eq("user_id", currentUser.id);
+}
+
+async function signInWithGoogle() {
+  await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: getURL()
+    }
+  });
+}
+
+async function signOut() {
+  await supabase.auth.signOut();
+  currentUser = null;
+  renderAuthState();
+  updateStatus("Вийшов");
+}
+
+function renderAuthState() {
+  if (!currentUser) {
+    authLoggedOut.classList.remove("hidden");
+    authLoggedIn.classList.add("hidden");
+    return;
+  }
+
+  authLoggedOut.classList.add("hidden");
+  authLoggedIn.classList.remove("hidden");
+
+  const meta = currentUser.user_metadata || {};
+  userName.textContent = meta.full_name || meta.name || "Користувач";
+  userEmail.textContent = currentUser.email || "Без email";
+  userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
+}
+
+async function initAuth() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) console.error(error);
+
+  currentUser = data?.session?.user || null;
+  renderAuthState();
+
+  if (currentUser) {
+    await ensureProfile(currentUser);
+    await loadServerChats();
+  }
 }
 
 async function sendChatMessage(text) {
@@ -557,6 +749,14 @@ async function sendChatMessage(text) {
   saveState();
   renderAll();
 
+  if (currentUser) {
+    try {
+      await appendMessageToServer(active, userMessage);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   promptInput.value = "";
   autoResize();
 
@@ -578,8 +778,6 @@ async function sendChatMessage(text) {
       if (currentController) currentController.abort();
     }, getModelTimeout(modelSelect.value));
 
-    const activeForRequest = ensureChat();
-
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
@@ -588,7 +786,7 @@ async function sendChatMessage(text) {
       body: JSON.stringify({
         model: modelSelect.value,
         thinking: thinkingCheckbox.checked,
-        messages: trimMessages(activeForRequest.messages, 10),
+        messages: trimMessages(active.messages, 10),
         stream: true,
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
@@ -624,10 +822,6 @@ async function sendChatMessage(text) {
         continue;
       }
 
-      if (event.type === "reasoning") {
-        continue;
-      }
-
       if (event.type === "finish") {
         finishReason = event.finish_reason || null;
         continue;
@@ -649,33 +843,30 @@ async function sendChatMessage(text) {
     }
 
     finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-    appendAssistantMessageToState(`${labelText}${contentText}`);
+
+    const assistantMessage = {
+      role: "assistant",
+      content: `${labelText}${contentText}`
+    };
+
+    active.messages.push(assistantMessage);
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
+
+    if (currentUser) {
+      try {
+        await appendMessageToServer(active, assistantMessage);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     clearSelectedImage();
   } catch (error) {
     assistantEl.classList.remove("typing");
-    const msg = String(error?.message || "").toLowerCase();
-
-    if (error.name === "AbortError") {
-      if (contentText.trim()) {
-        contentText += "\n\n_Зупинено._";
-        finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-        appendAssistantMessageToState(`${labelText}${contentText}`);
-      } else {
-        assistantEl.querySelector(".message-content").textContent = "Зупинено.";
-      }
-    } else if (msg.includes("terminated") || msg.includes("stream")) {
-      if (contentText.trim()) {
-        contentText += "\n\n_Потік обірвався. Напиши: `продовжуй`._";
-        finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-        appendAssistantMessageToState(`${labelText}${contentText}`);
-      } else {
-        assistantEl.querySelector(".message-content").textContent =
-          "Потік відповіді обірвався. Спробуй ще раз.";
-      }
-    } else {
-      assistantEl.querySelector(".message-content").textContent =
-        "Помилка: " + (error.message || "невідома помилка");
-    }
+    assistantEl.querySelector(".message-content").textContent =
+      "Помилка: " + (error.message || "невідома помилка");
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     setBusy(false, "Готово");
@@ -696,6 +887,14 @@ async function generateImageFromPrompt(prompt) {
   active.updatedAt = Date.now();
   saveState();
   renderAll();
+
+  if (currentUser) {
+    try {
+      await appendMessageToServer(active, userMessage);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   promptInput.value = "";
   autoResize();
@@ -768,10 +967,25 @@ async function generateImageFromPrompt(prompt) {
     wrap.append(img, actions);
     assistantEl.querySelector(".message-content").appendChild(wrap);
 
-    appendAssistantMessageToState(`Ось згенероване зображення.\n\nМодель: \`${data?.model || "unknown"}\``, {
+    const assistantMessage = {
+      role: "assistant",
+      content: `Ось згенероване зображення.\n\nМодель: \`${data?.model || "unknown"}\``,
       kind: "image",
       imageUrl
-    });
+    };
+
+    active.messages.push(assistantMessage);
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
+
+    if (currentUser) {
+      try {
+        await appendMessageToServer(active, assistantMessage);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   } catch (error) {
     assistantEl.classList.remove("typing");
     assistantEl.querySelector(".message-content").textContent =
@@ -797,10 +1011,10 @@ smartModeBtn.addEventListener("click", () => {
 newChatBtn.addEventListener("click", () => {
   if (requestInFlight) return;
   clearSelectedImage();
-  createChat("Новий чат");
+  createLocalChat("Новий чат");
 });
 
-clearBtn.addEventListener("click", () => {
+clearBtn.addEventListener("click", async () => {
   if (requestInFlight) return;
   const active = ensureChat();
   active.messages = [];
@@ -808,6 +1022,18 @@ clearBtn.addEventListener("click", () => {
   active.updatedAt = Date.now();
   saveState();
   renderAll();
+
+  if (currentUser && active.serverId) {
+    await supabase.from("messages").delete().eq("chat_id", active.serverId).eq("user_id", currentUser.id);
+    await supabase
+      .from("chats")
+      .update({
+        title: "Новий чат",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", active.serverId)
+      .eq("user_id", currentUser.id);
+  }
 });
 
 stopBtn.addEventListener("click", () => {
@@ -848,21 +1074,21 @@ imageInput.addEventListener("change", async () => {
 });
 
 removeImageBtn.addEventListener("click", clearSelectedImage);
+exportJsonBtn.addEventListener("click", exportActiveChatJson);
+exportMdBtn.addEventListener("click", exportActiveChatMd);
+googleLoginBtn.addEventListener("click", signInWithGoogle);
+logoutBtn.addEventListener("click", signOut);
+syncBtn.addEventListener("click", loadServerChats);
 
 generateImageBtn.addEventListener("click", async () => {
   if (requestInFlight) return;
-
   const prompt = promptInput.value.trim();
   if (!prompt) {
     alert("Спочатку введи опис для генерації зображення.");
     return;
   }
-
   await generateImageFromPrompt(prompt);
 });
-
-exportJsonBtn.addEventListener("click", exportActiveChatJson);
-exportMdBtn.addEventListener("click", exportActiveChatMd);
 
 promptInput.addEventListener("input", autoResize);
 
@@ -876,15 +1102,27 @@ promptInput.addEventListener("keydown", (e) => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (requestInFlight) return;
-
   const text = promptInput.value.trim();
   if (!text) return;
-
   await sendChatMessage(text);
 });
 
-ensureChat();
+supabase.auth.onAuthStateChange(async (event, session) => {
+  currentUser = session?.user || null;
+  renderAuthState();
+
+  if (event === "SIGNED_IN" && currentUser) {
+    await ensureProfile(currentUser);
+    await loadServerChats();
+  }
+
+  if (event === "SIGNED_OUT") {
+    updateStatus("Вийшов");
+  }
+});
+
 renderAll();
 autoResize();
 updateSelectedImageUI();
 updateStatus("Готово");
+initAuth();
