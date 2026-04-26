@@ -39,11 +39,12 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v11";
+const STORAGE_KEY = "ai-chat-sync-v12";
 
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
+let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
@@ -350,7 +351,6 @@ async function signInWithGoogle() {
   });
 
   if (error) {
-    console.error(error);
     alert("Google login error: " + (error.message || "невідома помилка"));
     updateStatus("Помилка логіну");
   }
@@ -360,7 +360,6 @@ async function signOut() {
   const { error } = await sb.auth.signOut();
 
   if (error) {
-    console.error(error);
     alert("Logout error: " + (error.message || "невідома помилка"));
     return;
   }
@@ -375,7 +374,6 @@ async function initAuth() {
     const { data, error } = await sb.auth.getSession();
 
     if (error) {
-      console.error(error);
       updateStatus("Помилка сесії");
       return;
     }
@@ -388,8 +386,7 @@ async function initAuth() {
     }
 
     updateStatus("Готово");
-  } catch (e) {
-    console.error(e);
+  } catch {
     updateStatus("Auth init error");
   }
 }
@@ -465,7 +462,7 @@ function setBusy(isBusy, status = "Готово") {
   updateStatus(status);
 }
 
-function trimMessages(messages, maxItems = 12) {
+function trimMessages(messages, maxItems = 10) {
   return messages.slice(-maxItems).map((m) => ({
     role: m.role,
     content: m.content
@@ -509,14 +506,18 @@ function parseAssistantPayload(raw) {
 }
 
 async function sendChatMessage(text) {
-  const active = ensureChat();
+  if (requestInFlight) return;
 
+  const active = ensureChat();
   addUserMessage(text);
   promptInput.value = "";
   autoResize();
 
   const assistantMsg = addAssistantMessage("Думаю...");
   setBusy(true, "Генерація відповіді...");
+
+  const controller = new AbortController();
+  currentController = controller;
 
   try {
     const requestOptions = buildRequestPayload();
@@ -526,12 +527,13 @@ async function sendChatMessage(text) {
       headers: {
         "Content-Type": "application/json"
       },
+      signal: controller.signal,
       body: JSON.stringify({
         model: requestOptions.model,
         thinking: requestOptions.thinking,
         responseMode: requestOptions.responseMode,
         stream: requestOptions.stream,
-        messages: trimMessages(active.messages, 12),
+        messages: trimMessages(active.messages, 10),
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
           name: selectedImage.name,
@@ -554,12 +556,20 @@ async function sendChatMessage(text) {
     saveState();
     renderAll();
   } catch (e) {
-    console.error(e);
-    assistantMsg.content = "Помилка: " + (e.message || "невідома помилка");
+    if (e?.name === "AbortError") {
+      assistantMsg.content = "Запит зупинено.";
+    } else {
+      console.error(e);
+      assistantMsg.content = "Помилка: " + (e.message || "невідома помилка");
+    }
+
     active.updatedAt = Date.now();
     saveState();
     renderAll();
   } finally {
+    if (currentController === controller) {
+      currentController = null;
+    }
     setBusy(false, "Готово");
   }
 }
@@ -663,7 +673,6 @@ async function syncActiveChat() {
     await replaceServerMessages(active);
     updateStatus("Синхронізовано");
   } catch (e) {
-    console.error(e);
     updateStatus("Помилка sync");
     alert("Sync error: " + (e.message || "невідома помилка"));
   }
@@ -722,7 +731,6 @@ async function loadServerChats() {
     updateStatus("Історія завантажена");
     closeMobileSidebar();
   } catch (e) {
-    console.error(e);
     updateStatus("Помилка завантаження");
     alert("Load error: " + (e.message || "невідома помилка"));
   }
@@ -817,7 +825,9 @@ generateImageBtn?.addEventListener("click", () => {
   alert("Після чату підключимо і генерацію фото.");
 });
 
-stopBtn?.addEventListener("click", () => {});
+stopBtn?.addEventListener("click", () => {
+  if (currentController) currentController.abort();
+});
 
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
