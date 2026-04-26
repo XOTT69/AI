@@ -1,15 +1,15 @@
 const ALLOWED_MODELS = {
-  "deepseek-ai/deepseek-v4-flash": {
-    label: "DeepSeek V4 Flash — Швидкий",
-    system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
+  "meta/llama-3.1-8b-instruct": {
+    label: "Llama 3.1 8B — Швидкий",
+    system: "Ти дуже швидкий AI-помічник. Відповідай українською мовою коротко і чітко.",
     fast: { maxTokens: 1500, temperature: 0.15 },
     smart: { maxTokens: 2500, temperature: 0.3 }
   },
-  "deepseek-ai/deepseek-v4-pro": {
-    label: "DeepSeek V4 Pro — Розумний",
+  "meta/llama-3.3-70b-instruct": {
+    label: "Llama 3.3 70B — Універсал",
     system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно і структуровано.",
     fast: { maxTokens: 2000, temperature: 0.3 },
-    smart: { maxTokens: 4000, temperature: 0.6 }
+    smart: { maxTokens: 4000, temperature: 0.5 }
   },
   "google/gemma-3-27b-it": {
     label: "Gemma 3 (27B) — Фото й OCR",
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Messages are required" });
     }
 
-    const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v4-flash";
+    const selectedModel = ALLOWED_MODELS[model] ? model : "meta/llama-3.1-8b-instruct";
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
@@ -98,17 +98,9 @@ export default async function handler(req, res) {
       messages: safeMessages,
       temperature: thinking ? Math.max(modeConfig.temperature, 0.25) : modeConfig.temperature,
       top_p: 0.9,
-      // Для DeepSeek-v4 жорстко обмежуємо токени, щоб не було тайм-ауту NIM
-      max_tokens: selectedModel.includes("v4") ? 2048 : (thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens),
+      max_tokens: thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens,
       stream: true 
     };
-
-    // СПЕЦІАЛЬНИЙ ФІКС ДЛЯ DEEPSEEK V4: Додаємо параметр reasoning, якщо юзер вибрав "Думаю"
-    if (selectedModel.includes("deepseek-v4") && thinking) {
-      requestPayload.reasoning_effort = "high"; // Це офіційний параметр NVIDIA NIM для вмикання мислення
-    } else if (selectedModel.includes("deepseek-v4") && !thinking) {
-      requestPayload.reasoning_effort = "none";
-    }
 
     const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
@@ -164,16 +156,8 @@ export default async function handler(req, res) {
 
               try {
                 const json = JSON.parse(payload);
-                // ФІКС: DeepSeek V4 може віддавати порожні чанки, поки думає (reasoning_content)
                 const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
-                const reasoningContent = json?.choices?.[0]?.delta?.reasoning_content ?? "";
-                
-                if (deltaContent) {
-                  sendSSE(res, { type: "content", content: deltaContent });
-                } else if (reasoningContent && thinking) {
-                  // Якщо модель думає, виводимо думки як контент (можна курсивом, але поки просто текст)
-                  sendSSE(res, { type: "content", content: reasoningContent });
-                }
+                if (deltaContent) sendSSE(res, { type: "content", content: deltaContent });
               } catch (err) {}
             }
           }
@@ -185,10 +169,7 @@ export default async function handler(req, res) {
       res.end();
     }
   } catch (e) {
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Server crashed", details: String(e) });
-    } else {
-      res.end();
-    }
+    if (!res.headersSent) res.status(500).json({ error: "Server crashed", details: String(e) });
+    else res.end();
   }
 }
