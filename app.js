@@ -30,12 +30,16 @@ const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
+const sidebar = document.getElementById("sidebar");
+const mobileOverlay = document.getElementById("mobileOverlay");
+const quickActionsSection = document.getElementById("quickActionsSection");
+const quickActionsToggleIcon = document.getElementById("quickActionsToggleIcon");
 
 const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v1";
+const STORAGE_KEY = "ai-chat-sync-v2";
 
 let currentUser = null;
 let selectedImage = null;
@@ -68,6 +72,18 @@ function updateStatus(text) {
   statusText.textContent = text;
 }
 
+function closeMobileSidebar() {
+  if (!sidebar || !mobileOverlay) return;
+  if (window.innerWidth > 960) return;
+  sidebar.classList.remove("open");
+  mobileOverlay.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+}
+
+function closeAllChatMenus() {
+  document.querySelectorAll(".chat-menu.show").forEach((el) => el.classList.remove("show"));
+}
+
 function getActiveChat() {
   return state.chats.find(c => c.id === state.activeChatId) || null;
 }
@@ -92,6 +108,7 @@ function createLocalChat(initialTitle = "Новий чат", forcedId = null) {
   state.activeChatId = chatObj.id;
   saveState();
   renderAll();
+  closeMobileSidebar();
   return chatObj;
 }
 
@@ -107,6 +124,7 @@ function switchChat(chatId) {
   state.activeChatId = chatId;
   saveState();
   renderAll();
+  closeMobileSidebar();
 }
 
 function renderMarkdown(text) {
@@ -144,29 +162,48 @@ function renderChatList() {
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
 
-    const actions = document.createElement("div");
-    actions.className = "chat-item-actions";
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "chat-menu-wrap";
+
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "chat-menu-btn";
+    menuBtn.textContent = "⋯";
+
+    const menu = document.createElement("div");
+    menu.className = "chat-menu";
 
     const openBtn = document.createElement("button");
     openBtn.type = "button";
-    openBtn.className = "ghost-btn small-btn";
     openBtn.textContent = "Відкрити";
     openBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      menu.classList.remove("show");
       switchChat(item.id);
     });
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
-    deleteBtn.className = "ghost-btn small-btn danger-btn";
     deleteBtn.textContent = "Видалити";
+    deleteBtn.className = "danger";
     deleteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      menu.classList.remove("show");
       await deleteChat(item.id);
     });
 
-    actions.append(openBtn, deleteBtn);
-    div.append(title, meta, actions);
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.querySelectorAll(".chat-menu.show").forEach((el) => {
+        if (el !== menu) el.classList.remove("show");
+      });
+      menu.classList.toggle("show");
+    });
+
+    menu.append(openBtn, deleteBtn);
+    menuWrap.append(menuBtn, menu);
+
+    div.append(title, meta, menuWrap);
     div.addEventListener("click", () => switchChat(item.id));
     chatList.appendChild(div);
   }
@@ -568,6 +605,7 @@ async function loadServerChats() {
     }
 
     updateStatus("Історія завантажена");
+    closeMobileSidebar();
   } catch (e) {
     console.error(e);
     updateStatus("Помилка завантаження");
@@ -679,6 +717,12 @@ promptInput.addEventListener("keydown", (e) => {
   }
 });
 
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".chat-menu-wrap")) {
+    closeAllChatMenus();
+  }
+});
+
 sb.auth.onAuthStateChange(async (_event, session) => {
   currentUser = session?.user || null;
   renderAuthState();
@@ -687,6 +731,13 @@ sb.auth.onAuthStateChange(async (_event, session) => {
     await ensureProfile(currentUser);
   }
 });
+
+if (quickActionsSection && quickActionsToggleIcon) {
+  quickActionsSection.classList.add("hidden");
+  quickActionsToggleIcon.textContent = "+";
+}
+
+window.loadServerChats = loadServerChats;
 
 renderAll();
 autoResize();
