@@ -2,11 +2,16 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  alert("Не заповнений config.js з Supabase URL / ANON KEY");
+  throw new Error("Supabase config missing in config.js");
 }
 
-const { createClient } = window.supabase;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseLib = window.supabase || window.supabaseJs || null;
+
+if (!supabaseLib || typeof supabaseLib.createClient !== "function") {
+  throw new Error("Supabase CDN not loaded correctly");
+}
+
+const supabase = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const chat = document.getElementById("chat");
 const form = document.getElementById("chatForm");
@@ -224,6 +229,7 @@ function renderChatList() {
 
     const openBtn = document.createElement("button");
     openBtn.className = "ghost-btn small-btn";
+    openBtn.type = "button";
     openBtn.textContent = "Відкрити";
     openBtn.onclick = (e) => {
       e.stopPropagation();
@@ -232,6 +238,7 @@ function renderChatList() {
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "ghost-btn small-btn danger-btn";
+    removeBtn.type = "button";
     removeBtn.textContent = "Видалити";
     removeBtn.onclick = async (e) => {
       e.stopPropagation();
@@ -1101,9 +1108,8 @@ promptInput.addEventListener("keydown", (e) => {
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (requestInFlight) return;
   const text = promptInput.value.trim();
-  if (!text) return;
+  if (!text || requestInFlight) return;
   await sendChatMessage(text);
 });
 
