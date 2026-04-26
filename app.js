@@ -39,11 +39,10 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v8";
+const STORAGE_KEY = "ai-chat-sync-v10";
 
 let currentUser = null;
 let selectedImage = null;
-let currentController = null;
 let requestInFlight = false;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
@@ -472,11 +471,8 @@ function trimMessages(messages, maxItems = 12) {
 
 function buildRequestPayload() {
   const selectedModel = modelSelect?.value || "deepseek-ai/deepseek-v4-flash";
-  const isSmart = state.mode === "smart";
-
   return {
-    model: selectedModel,
-    thinking: isSmart ? true : !!thinkingCheckbox?.checked
+    model: selectedModel
   };
 }
 
@@ -512,12 +508,10 @@ async function sendChatMessage(text) {
   promptInput.value = "";
   autoResize();
 
-  addAssistantMessage("Думаю...");
+  const assistantMsg = addAssistantMessage("Думаю...");
   setBusy(true, "Генерація відповіді...");
 
   try {
-    currentController = new AbortController();
-
     const requestOptions = buildRequestPayload();
 
     const response = await fetch("/api/chat", {
@@ -527,16 +521,13 @@ async function sendChatMessage(text) {
       },
       body: JSON.stringify({
         model: requestOptions.model,
-        thinking: requestOptions.thinking,
         messages: trimMessages(active.messages, 12),
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
           name: selectedImage.name,
           type: selectedImage.type
-        } : null,
-        stream: false
-      }),
-      signal: currentController.signal
+        } : null
+      })
     });
 
     if (!response.ok) {
@@ -549,29 +540,17 @@ async function sendChatMessage(text) {
     const raw = await response.text();
     const parsedText = parseAssistantText(raw) || "Порожня відповідь";
 
-    const lastMessage = active.messages[active.messages.length - 1];
-    if (lastMessage && lastMessage.role === "assistant") {
-      lastMessage.content = parsedText;
-      active.updatedAt = Date.now();
-      saveState();
-      renderAll();
-    }
+    assistantMsg.content = parsedText;
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
   } catch (e) {
     console.error(e);
-
-    const lastMessage = active.messages[active.messages.length - 1];
-    if (lastMessage && lastMessage.role === "assistant") {
-      if (e?.name === "AbortError") {
-        lastMessage.content = "Запит зупинено.";
-      } else {
-        lastMessage.content = "Помилка: " + (e.message || "невідома помилка");
-      }
-      active.updatedAt = Date.now();
-      saveState();
-      renderAll();
-    }
+    assistantMsg.content = "Помилка: " + (e.message || "невідома помилка");
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
   } finally {
-    currentController = null;
     setBusy(false, "Готово");
   }
 }
@@ -829,9 +808,7 @@ generateImageBtn?.addEventListener("click", () => {
   alert("Після чату підключимо і генерацію фото.");
 });
 
-stopBtn?.addEventListener("click", () => {
-  if (currentController) currentController.abort();
-});
+stopBtn?.addEventListener("click", () => {});
 
 form?.addEventListener("submit", async (e) => {
   e.preventDefault();
