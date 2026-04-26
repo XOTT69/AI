@@ -39,14 +39,12 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v7";
+const STORAGE_KEY = "ai-chat-sync-v8";
 
 let currentUser = null;
 let selectedImage = null;
 let currentController = null;
 let requestInFlight = false;
-let currentTimeoutId = null;
-let currentAssistantBubble = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
@@ -441,28 +439,6 @@ function addAssistantMessage(text) {
   return msg;
 }
 
-function createAssistantStreamingBubble() {
-  const wrap = document.createElement("div");
-  wrap.className = "message assistant typing";
-
-  const inner = document.createElement("div");
-  inner.className = "message-content";
-  inner.textContent = "Думаю...";
-
-  wrap.appendChild(inner);
-  chat.appendChild(wrap);
-  chat.scrollTop = chat.scrollHeight;
-
-  currentAssistantBubble = { wrap, inner };
-  return currentAssistantBubble;
-}
-
-function removeAssistantStreamingBubble() {
-  if (!currentAssistantBubble) return;
-  currentAssistantBubble.wrap.remove();
-  currentAssistantBubble = null;
-}
-
 function setBusy(isBusy, status = "Готово") {
   requestInFlight = isBusy;
   if (sendBtn) sendBtn.disabled = isBusy;
@@ -470,12 +446,12 @@ function setBusy(isBusy, status = "Готово") {
 
   if (isBusy) {
     const model = modelSelect?.value || "";
-    if (model.includes("glm")) {
-      updateStatus("GLM думає довше...");
+    if (model.includes("flash")) {
+      updateStatus("Flash генерує відповідь...");
       return;
     }
-    if (model.includes("pro") && state.mode === "smart") {
-      updateStatus("Pro у розумному режимі може відповідати довше...");
+    if (model.includes("glm")) {
+      updateStatus("GLM генерує відповідь...");
       return;
     }
     if (model.includes("pro")) {
@@ -504,73 +480,29 @@ function buildRequestPayload() {
   };
 }
 
-async function* parseSSEStream(stream) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+function parseAssistantText(raw) {
+  if (!raw) return "";
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const json = JSON.parse(raw);
 
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() ?? "";
-
-      for (const event of events) {
-        const lines = event.split("\n");
-        const dataLines = [];
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith(":")) continue;
-          if (trimmed.startsWith("data:")) {
-            dataLines.push(trimmed.slice(5).trim());
-          }
-        }
-
-        const data = dataLines.join("");
-        if (!data) continue;
-
-        if (data === "[DONE]") {
-          yield { type: "__done__" };
-          continue;
-        }
-
-        try {
-          const parsed = JSON.parse(data);
-
-          if (parsed.choices?.[0]?.delta?.content) {
-            yield { type: "content", content: parsed.choices[0].delta.content };
-            continue;
-          }
-
-          if (parsed.type || parsed.content || parsed.message || parsed.error) {
-            yield parsed;
-          }
-        } catch {
-          yield { type: "content", content: data };
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+    return (
+      json.content ||
+      json.text ||
+      json.answer ||
+      json.response ||
+      json.output_text ||
+      json.message?.content ||
+      json.message ||
+      json.choices?.[0]?.message?.content ||
+      json.choices?.[0]?.text ||
+      json.data?.content ||
+      json.data?.response ||
+      ""
+    );
+  } catch {
+    return raw;
   }
-}
-
-function clearCurrentTimeout() {
-  if (currentTimeoutId) {
-    clearTimeout(currentTimeoutId);
-    currentTimeoutId = null;
-  }
-}
-
-function getTimeoutMs() {
-  const model = modelSelect?.value || "";
-
-  if (model.includes("flash")) return 30000;
-  return null;
 }
 
 async function sendChatMessage(text) {
@@ -580,20 +512,11 @@ async function sendChatMessage(text) {
   promptInput.value = "";
   autoResize();
 
-  const bubble = createAssistantStreamingBubble();
-  let contentText = "";
-
+  addAssistantMessage("Думаю...");
   setBusy(true, "Генерація відповіді...");
 
   try {
     currentController = new AbortController();
-
-    const timeoutMs = getTimeoutMs();
-    if (timeoutMs) {
-      currentTimeoutId = setTimeout(() => {
-        if (currentController) currentController.abort();
-      }, timeoutMs);
-    }
 
     const requestOptions = buildRequestPayload();
 
@@ -611,62 +534,43 @@ async function sendChatMessage(text) {
           name: selectedImage.name,
           type: selectedImage.type
         } : null,
-        stream: true
+        stream: false
       }),
       signal: currentController.signal
     });
 
     if (!response.ok) {
-      const raw = await response.text();
-      throw new Error(raw || `HTTP ${response.status}`);
+      const rawError = await response.text();
+      throw new Error(rawError || `HTTP ${response.status}`);
     }
 
     clearSelectedImage();
 
-    if (!response.body) {
-      const raw = await response.text();
-      contentText = raw || "Порожня відповідь";
-    } else {
-      for await (const event of parseSSEStream(response.body)) {
-        if (event.type === "__done__" || event.type === "done") continue;
+    const raw = await response.text();
+    const parsedText = parseAssistantText(raw) || "Порожня відповідь";
 
-        if (event.type === "content") {
-          contentText += event.content || "";
-          bubble.inner.textContent = contentText || "Думаю...";
-          chat.scrollTop = chat.scrollHeight;
-          continue;
-        }
-
-        if (event.type === "error") {
-          throw new Error(event.message || event.error || "Streaming error");
-        }
-
-        if (event.message && String(event.message).toLowerCase().includes("terminated")) {
-          throw new Error("terminated");
-        }
-      }
+    const lastMessage = active.messages[active.messages.length - 1];
+    if (lastMessage && lastMessage.role === "assistant") {
+      lastMessage.content = parsedText;
+      active.updatedAt = Date.now();
+      saveState();
+      renderAll();
     }
-
-    clearCurrentTimeout();
-    removeAssistantStreamingBubble();
-    addAssistantMessage(contentText || "Порожня відповідь");
   } catch (e) {
-    clearCurrentTimeout();
     console.error(e);
 
-    removeAssistantStreamingBubble();
-
-    const msg = String(e?.message || "").toLowerCase();
-
-    if (e?.name === "AbortError") {
-      addAssistantMessage("Запит зупинено.");
-    } else if (msg.includes("terminated")) {
-      addAssistantMessage("Сервер обірвав генерацію. Спробуй Flash або вимкни Thinking.");
-    } else {
-      addAssistantMessage("Помилка: " + (e.message || "невідома помилка"));
+    const lastMessage = active.messages[active.messages.length - 1];
+    if (lastMessage && lastMessage.role === "assistant") {
+      if (e?.name === "AbortError") {
+        lastMessage.content = "Запит зупинено.";
+      } else {
+        lastMessage.content = "Помилка: " + (e.message || "невідома помилка");
+      }
+      active.updatedAt = Date.now();
+      saveState();
+      renderAll();
     }
   } finally {
-    clearCurrentTimeout();
     currentController = null;
     setBusy(false, "Готово");
   }
