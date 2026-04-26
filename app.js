@@ -39,7 +39,7 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v10";
+const STORAGE_KEY = "ai-chat-sync-v11";
 
 let currentUser = null;
 let selectedImage = null;
@@ -261,6 +261,7 @@ function renderAll() {
   renderMessages();
   fastModeBtn?.classList.toggle("active", state.mode === "fast");
   smartModeBtn?.classList.toggle("active", state.mode === "smart");
+  if (stopBtn) stopBtn.disabled = !requestInFlight;
 }
 
 function autoResize() {
@@ -445,16 +446,18 @@ function setBusy(isBusy, status = "Готово") {
 
   if (isBusy) {
     const model = modelSelect?.value || "";
+    const mode = state.mode;
+
     if (model.includes("flash")) {
-      updateStatus("Flash генерує відповідь...");
+      updateStatus(mode === "smart" ? "Flash працює в розумному режимі..." : "Flash генерує відповідь...");
       return;
     }
     if (model.includes("glm")) {
-      updateStatus("GLM генерує відповідь...");
+      updateStatus(mode === "smart" ? "GLM думає глибше..." : "GLM генерує відповідь...");
       return;
     }
     if (model.includes("pro")) {
-      updateStatus("DeepSeek Pro генерує відповідь...");
+      updateStatus(mode === "smart" ? "DeepSeek Pro думає глибше..." : "DeepSeek Pro генерує відповідь...");
       return;
     }
   }
@@ -470,34 +473,38 @@ function trimMessages(messages, maxItems = 12) {
 }
 
 function buildRequestPayload() {
-  const selectedModel = modelSelect?.value || "deepseek-ai/deepseek-v4-flash";
   return {
-    model: selectedModel
+    model: modelSelect?.value || "deepseek-ai/deepseek-v4-flash",
+    thinking: !!thinkingCheckbox?.checked,
+    responseMode: state.mode === "smart" ? "smart" : "fast",
+    stream: false
   };
 }
 
-function parseAssistantText(raw) {
-  if (!raw) return "";
+function parseAssistantPayload(raw) {
+  if (!raw) return { content: "" };
 
   try {
     const json = JSON.parse(raw);
-
-    return (
-      json.content ||
-      json.text ||
-      json.answer ||
-      json.response ||
-      json.output_text ||
-      json.message?.content ||
-      json.message ||
-      json.choices?.[0]?.message?.content ||
-      json.choices?.[0]?.text ||
-      json.data?.content ||
-      json.data?.response ||
-      ""
-    );
+    return {
+      content:
+        json.content ||
+        json.text ||
+        json.answer ||
+        json.response ||
+        json.output_text ||
+        json.message?.content ||
+        json.message ||
+        json.choices?.[0]?.message?.content ||
+        json.choices?.[0]?.text ||
+        "",
+      model: json.model || null,
+      label: json.label || null,
+      error: json.error || null,
+      details: json.details || null
+    };
   } catch {
-    return raw;
+    return { content: raw };
   }
 }
 
@@ -521,6 +528,9 @@ async function sendChatMessage(text) {
       },
       body: JSON.stringify({
         model: requestOptions.model,
+        thinking: requestOptions.thinking,
+        responseMode: requestOptions.responseMode,
+        stream: requestOptions.stream,
         messages: trimMessages(active.messages, 12),
         image: selectedImage?.dataUrl ? {
           dataUrl: selectedImage.dataUrl,
@@ -530,17 +540,16 @@ async function sendChatMessage(text) {
       })
     });
 
+    const raw = await response.text();
+    const parsed = parseAssistantPayload(raw);
+
     if (!response.ok) {
-      const rawError = await response.text();
-      throw new Error(rawError || `HTTP ${response.status}`);
+      throw new Error(parsed.details || parsed.error || raw || `HTTP ${response.status}`);
     }
 
     clearSelectedImage();
 
-    const raw = await response.text();
-    const parsedText = parseAssistantText(raw) || "Порожня відповідь";
-
-    assistantMsg.content = parsedText;
+    assistantMsg.content = parsed.content || "Порожня відповідь";
     active.updatedAt = Date.now();
     saveState();
     renderAll();
