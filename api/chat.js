@@ -1,15 +1,20 @@
+// ВАЖЛИВО: Запускаємо на Edge, щоб Vercel не обривав стрімінг через 10 секунд
+export const config = {
+  runtime: 'edge'
+};
+
 const ALLOWED_MODELS = {
-  "meta/llama-3.1-8b-instruct": {
-    label: "Llama 3.1 8B — Швидкий",
-    system: "Ти дуже швидкий AI-помічник. Відповідай українською мовою коротко і чітко.",
-    fast: { maxTokens: 1500, temperature: 0.15 },
-    smart: { maxTokens: 2500, temperature: 0.3 }
-  },
   "meta/llama-3.3-70b-instruct": {
-    label: "Llama 3.3 70B — Універсал",
-    system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно і структуровано.",
+    label: "Llama 3.3 70B — База",
+    system: "Ти дуже швидкий і розумний AI-помічник. Відповідай українською мовою коротко і чітко.",
+    fast: { maxTokens: 1500, temperature: 0.2 },
+    smart: { maxTokens: 2500, temperature: 0.4 }
+  },
+  "meta/llama-3.1-405b-instruct": {
+    label: "Llama 3.1 405B — Макс",
+    system: "Ти надпотужний AI-помічник. Відповідай українською мовою, чітко, максимально розумно і глибоко.",
     fast: { maxTokens: 2000, temperature: 0.3 },
-    smart: { maxTokens: 4000, temperature: 0.5 }
+    smart: { maxTokens: 4000, temperature: 0.6 }
   },
   "google/gemma-3-27b-it": {
     label: "Gemma 3 (27B) — Фото й OCR",
@@ -31,10 +36,6 @@ const ALLOWED_MODELS = {
 
 function trimMessages(messages, maxItems = 10) {
   return messages.slice(-maxItems);
-}
-
-function sendSSE(res, payload) {
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 function buildVisionPrompt(userText = "") {
@@ -69,25 +70,28 @@ function normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, i
   ];
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  let clientClosed = false;
-  req.on("close", () => { clientClosed = true; });
+export default async function handler(req) {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+  }
 
   try {
     if (!process.env.NVIDIA_API_KEY) {
-      return res.status(500).json({ error: "NVIDIA_API_KEY is missing" });
+      return new Response(JSON.stringify({ error: "NVIDIA_API_KEY is missing" }), { status: 500 });
     }
 
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const body = await req.json();
     const { messages, model, thinking, responseMode, image } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "Messages are required" });
+      return new Response(JSON.stringify({ error: "Messages are required" }), { status: 400 });
     }
 
-    const selectedModel = ALLOWED_MODELS[model] ? model : "meta/llama-3.1-8b-instruct";
+    // Якщо прийде стара Llama 8B, яка не працює, ми автоматично перемикаємо її на стабільну Llama 3.3 70B
+    const fallbackModel = "meta/llama-3.3-70b-instruct";
+    let selectedModel = ALLOWED_MODELS[model] ? model : fallbackModel;
+    if (model === "meta/llama-3.1-8b-instruct") selectedModel = fallbackModel;
+
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
@@ -114,62 +118,69 @@ export default async function handler(req, res) {
 
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text();
-      return res.status(upstream.status).json({ error: "NVIDIA API error", details: raw });
+      return new Response(JSON.stringify({ error: "NVIDIA API error", details: raw }), { status: upstream.status });
     }
 
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
+    const stream = new ReadableStream({
+      async start(controller) {
+        const metaPayload = `data: ${JSON.stringify({ type: "meta", label: modelConfig.label, model: selectedModel })}\n\n`;
+        controller.enqueue(new TextEncoder().encode(metaPayload));
 
-    sendSSE(res, { type: "meta", label: modelConfig.label, model: selectedModel });
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
 
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-    try {
-      while (true) {
-        if (clientClosed) {
-          try { reader.cancel(); } catch {}
-          break;
-        }
-        const { value, done } = await reader.read();
-        if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split("\n\n");
+            buffer = events.pop() || "";
 
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
+            for (const event of events) {
+              const lines = event.split("\n");
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith("data:")) {
+                  const payload = trimmed.slice(5).trim();
+                  if (payload === "[DONE]") {
+                    controller.enqueue(new TextEncoder().encode(`data: {"type":"done"}\n\n`));
+                    controller.enqueue(new TextEncoder().encode(`data: [DONE]\n\n`));
+                    controller.close();
+                    return;
+                  }
 
-        for (const event of events) {
-          const lines = event.split("\n");
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("data:")) {
-              const payload = trimmed.slice(5).trim();
-              if (payload === "[DONE]") {
-                sendSSE(res, { type: "done" });
-                res.write("data: [DONE]\n\n");
-                res.end();
-                return;
+                  try {
+                    const json = JSON.parse(payload);
+                    const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
+                    if (deltaContent) {
+                      const contentPayload = `data: ${JSON.stringify({ type: "content", content: deltaContent })}\n\n`;
+                      controller.enqueue(new TextEncoder().encode(contentPayload));
+                    }
+                  } catch (err) {}
+                }
               }
-
-              try {
-                const json = JSON.parse(payload);
-                const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
-                if (deltaContent) sendSSE(res, { type: "content", content: deltaContent });
-              } catch (err) {}
             }
           }
+          controller.close();
+        } catch (e) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "error", message: "Stream crashed" })}\n\n`));
+          controller.close();
         }
       }
-      res.end();
-    } catch (e) {
-      sendSSE(res, { type: "error", message: "Stream crashed" });
-      res.end();
-    }
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+      }
+    });
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: "Server crashed", details: String(e) });
-    else res.end();
+    return new Response(JSON.stringify({ error: "Server crashed", details: String(e) }), { status: 500 });
   }
 }
