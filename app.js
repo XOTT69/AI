@@ -32,29 +32,17 @@ const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 
-let supaUrl = "";
-let supaKey = "";
-
-if (typeof SUPABASE_URL !== "undefined") supaUrl = SUPABASE_URL;
-else if (window.SUPABASE_URL) supaUrl = window.SUPABASE_URL;
-else if (window.NEXT_PUBLIC_SUPABASE_URL) supaUrl = window.NEXT_PUBLIC_SUPABASE_URL;
-else if (window.config?.SUPABASE_URL) supaUrl = window.config.SUPABASE_URL;
-
-if (typeof SUPABASE_ANON_KEY !== "undefined") supaKey = SUPABASE_ANON_KEY;
-else if (window.SUPABASE_ANON_KEY) supaKey = window.SUPABASE_ANON_KEY;
-else if (window.NEXT_PUBLIC_SUPABASE_ANON_KEY) supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-else if (window.config?.SUPABASE_ANON_KEY) supaKey = window.config.SUPABASE_ANON_KEY;
-
+let supaUrl = window.NEXT_PUBLIC_SUPABASE_URL || window.config?.SUPABASE_URL || window.SUPABASE_URL || "";
+let supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.config?.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || "";
 let sb = null;
 
 if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
-  console.log("Supabase підключено");
 } else {
   sb = {
     auth: {
       getSession: async () => ({ data: { session: null }, error: null }),
-      signInWithOAuth: async () => { alert("Supabase не налаштовано"); return { error: new Error("Missing config") }; },
+      signInWithOAuth: async () => ({ error: new Error("Missing config") }),
       signOut: async () => ({ error: null }),
       onAuthStateChange: () => {}
     },
@@ -68,7 +56,7 @@ if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v16";
+const STORAGE_KEY = "ai-chat-sync-v17";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -292,7 +280,7 @@ async function sendChatMessage(text) {
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: modelSelect?.value || "meta/llama-3.1-8b-instruct",
+        model: modelSelect?.value || "meta/llama-3.3-70b-instruct",
         thinking: !!thinkingCheckbox?.checked,
         responseMode: state.mode,
         stream: true,
@@ -301,7 +289,7 @@ async function sendChatMessage(text) {
       })
     });
 
-    if (!response.ok) throw new Error("Сервер повернув помилку " + response.status);
+    if (!response.ok) throw new Error(`Помилка сервера: ${response.status}`);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
@@ -343,7 +331,7 @@ async function sendChatMessage(text) {
     if (e?.name === "AbortError") {
       assistantMsg.content += "\n\n*[Генерацію зупинено]*";
     } else {
-      assistantMsg.content = "Помилка: " + e.message;
+      assistantMsg.content = `Помилка: ${e.message}. NVIDIA сервери можуть бути перевантажені.`;
     }
     const msgEls = chat.querySelectorAll('.message.assistant .message-content');
     if(msgEls.length > 0) msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
