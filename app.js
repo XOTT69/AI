@@ -29,64 +29,115 @@ const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
+const exportJsonBtn = document.getElementById("exportJsonBtn");
+const exportMdBtn = document.getElementById("exportMdBtn");
 
-// Ключі Supabase (безпечно тримати на фронтенді)
-let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
+let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
 const ALLOWED_MODELS = {
-  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий AI-помічник. Відповідай українською.", fastTokens: 1500, smartTokens: 3000 },
-  "google/gemma-2-27b-it": { system: "Ти швидкий AI-помічник. Відповідай українською.", fastTokens: 1500, smartTokens: 3000 },
-  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Описуй фото українською.", fastTokens: 1500, smartTokens: 3000 },
-  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти програміст-експерт. Відповідай українською.", fastTokens: 2000, smartTokens: 4000 }
+  "meta/llama-3.3-70b-instruct": {
+    label: "Llama 3.3 70B — Універсальна",
+    system: "Ти швидкий і точний AI-помічник. Відповідай українською мовою.",
+    fastTokens: 1500,
+    smartTokens: 3000
+  },
+  "qwen/qwen3.5-122b-a10b": {
+    label: "Qwen 3.5 122B — Розумна",
+    system: "Ти сильний AI-помічник для складних запитів, логіки, аналізу та пояснень. Відповідай українською мовою.",
+    fastTokens: 1800,
+    smartTokens: 3500
+  },
+  "google/gemma-3-27b-it": {
+    label: "Gemma 3 27B — Фото та OCR",
+    system: "Ти мультимодальний AI-помічник. Аналізуй зображення, фото, скріни та текст на зображеннях. Відповідай українською мовою.",
+    fastTokens: 1500,
+    smartTokens: 3000
+  },
+  "abacusai/dracarys-llama-3.1-70b-instruct": {
+    label: "Dracarys 70B — Код",
+    system: "Ти AI-помічник для програмування, налагодження і пояснення коду. Відповідай українською мовою.",
+    fastTokens: 2000,
+    smartTokens: 4000
+  }
 };
 
 let sb = null;
 if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 } else {
-  sb = { auth: { getSession: async () => ({}), onAuthStateChange: () => {} } };
+  sb = {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signInWithOAuth: async () => ({ error: new Error("Supabase not configured") }),
+      signOut: async () => ({ error: null }),
+      onAuthStateChange: () => {}
+    }
+  };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v20";
+const STORAGE_KEY = "ai-chat-sync-v21";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], mode: "fast" };
+if (!state || !Array.isArray(state.chats)) {
+  state = { activeChatId: null, chats: [], mode: "fast" };
+}
 
 marked.setOptions({ breaks: true, gfm: true });
 
-function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
-function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-function updateStatus(text) { if (statusText) statusText.textContent = text; }
-function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function updateStatus(text) {
+  if (statusText) statusText.textContent = text;
+}
+
+function getActiveChat() {
+  return state.chats.find(c => c.id === state.activeChatId) || null;
+}
 
 function ensureChat() {
   let active = getActiveChat();
   if (!active) {
-    active = { id: uid(), title: "Новий чат", messages: [] };
+    active = {
+      id: uid(),
+      title: "Новий чат",
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
     state.chats.unshift(active);
     state.activeChatId = active.id;
     saveState();
-    renderAll();
   }
   return active;
 }
 
-function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text || "")); }
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(text || ""));
+}
 
 function renderAuthState() {
   if (!authLoggedOut || !authLoggedIn) return;
+
   if (!currentUser) {
     authLoggedOut.classList.remove("hidden");
     authLoggedIn.classList.add("hidden");
     return;
   }
+
   authLoggedOut.classList.add("hidden");
   authLoggedIn.classList.remove("hidden");
+
   const meta = currentUser.user_metadata || {};
   if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
   if (userEmail) userEmail.textContent = currentUser.email || "Без email";
@@ -96,18 +147,27 @@ function renderAuthState() {
 function renderChatList() {
   if (!chatList) return;
   chatList.innerHTML = "";
+
   for (const item of state.chats) {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
+
     const title = document.createElement("div");
     title.className = "chat-item-title";
     title.textContent = item.title || "Новий чат";
+
     const meta = document.createElement("div");
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
-    
+
     div.append(title, meta);
-    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); }};
+    div.onclick = () => {
+      if (requestInFlight) return;
+      state.activeChatId = item.id;
+      saveState();
+      renderAll();
+    };
+
     chatList.appendChild(div);
   }
 }
@@ -115,26 +175,42 @@ function renderChatList() {
 function renderMessages() {
   const active = ensureChat();
   if (!chat) return;
+
   chat.innerHTML = "";
   if (chatTitle) chatTitle.textContent = active.title || "Новий чат";
+
+  if (!active.messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "chat-empty";
+    empty.textContent = "Напиши повідомлення, і ШІ відповість.";
+    chat.appendChild(empty);
+    return;
+  }
 
   for (const msg of active.messages) {
     const wrap = document.createElement("div");
     wrap.className = `message ${msg.role}`;
+
     const inner = document.createElement("div");
     inner.className = "message-content";
 
-    inner.innerHTML = msg.role === "assistant" ? renderMarkdown(msg.content || "") : (msg.content || "");
-    
+    if (msg.role === "assistant") {
+      inner.innerHTML = renderMarkdown(msg.content || "");
+    } else {
+      inner.textContent = msg.content || "";
+    }
+
     if (msg.image?.dataUrl) {
       const img = document.createElement("img");
       img.src = msg.image.dataUrl;
       img.className = "inline-preview-image";
       inner.appendChild(img);
     }
+
     wrap.appendChild(inner);
     chat.appendChild(wrap);
   }
+
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -154,14 +230,18 @@ function autoResize() {
 }
 
 function updateSelectedImageUI() {
-  if (!selectedImageBar) return;
+  if (!selectedImageBar || !selectedImageName || !selectedImagePreview) return;
+
   if (!selectedImage) {
     selectedImageBar.classList.add("hidden");
+    selectedImagePreview.removeAttribute("src");
     return;
   }
+
   selectedImageBar.classList.remove("hidden");
-  if(selectedImageName) selectedImageName.textContent = selectedImage.name || "Зображення";
-  if(selectedImagePreview) selectedImagePreview.src = selectedImage.dataUrl;
+  selectedImageName.textContent = selectedImage.name || "Зображення";
+  if (selectedImageHint) selectedImageHint.textContent = "Фото прикріплене.";
+  selectedImagePreview.src = selectedImage.dataUrl;
 }
 
 function clearSelectedImage() {
@@ -171,9 +251,10 @@ function clearSelectedImage() {
 }
 
 function fileToDataUrl(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
     reader.readAsDataURL(file);
   });
 }
@@ -187,25 +268,42 @@ function setBusy(isBusy, status = "Готово") {
 
 async function sendChatMessage(text) {
   if (requestInFlight) return;
-  
+
   const active = ensureChat();
-  active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage });
-  if (active.messages.length === 1) active.title = text.slice(0, 40);
-  
+  active.messages.push({
+    id: uid(),
+    role: "user",
+    content: text,
+    image: selectedImage,
+    createdAt: Date.now()
+  });
+
+  if (active.messages.length === 1) {
+    active.title = text.slice(0, 40) || "Новий чат";
+  }
+
   promptInput.value = "";
   autoResize();
-  
-  const assistantMsg = { id: uid(), role: "assistant", content: "" };
+
+  const assistantMsg = {
+    id: uid(),
+    role: "assistant",
+    content: "",
+    createdAt: Date.now()
+  };
   active.messages.push(assistantMsg);
   renderAll();
-  
+
   setBusy(true, "Генерація...");
-  const modelId = modelSelect?.value || "meta/llama-3.3-70b-instruct";
+
+  const modelId = ALLOWED_MODELS[modelSelect?.value]
+    ? modelSelect.value
+    : "meta/llama-3.3-70b-instruct";
+
   const modelConf = ALLOWED_MODELS[modelId];
-  
   let safeMessages = [{ role: "system", content: modelConf.system }];
   const recent = active.messages.slice(-10).filter(m => m.id !== assistantMsg.id);
-  
+
   if (selectedImage?.dataUrl && modelId.includes("gemma-3")) {
     safeMessages.push({
       role: "user",
@@ -215,10 +313,13 @@ async function sendChatMessage(text) {
       ]
     });
   } else {
-    recent.forEach(m => safeMessages.push({ role: m.role, content: m.content }));
+    recent.forEach(m => {
+      safeMessages.push({ role: m.role, content: m.content });
+    });
   }
 
   clearSelectedImage();
+
   const controller = new AbortController();
   currentController = controller;
 
@@ -239,13 +340,15 @@ async function sendChatMessage(text) {
       })
     });
 
-    if (!response.ok) throw new Error(`Помилка сервера: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`Помилка сервера: ${response.status}`);
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
 
-    const msgEls = chat.querySelectorAll('.message.assistant .message-content');
+    const msgEls = chat.querySelectorAll(".message.assistant .message-content");
     const targetEl = msgEls[msgEls.length - 1];
 
     while (true) {
@@ -259,78 +362,139 @@ async function sendChatMessage(text) {
       for (const part of parts) {
         const lines = part.split("\n");
         for (const line of lines) {
-          if (line.startsWith("data:")) {
-            const dataStr = line.slice(5).trim();
-            if (dataStr === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(dataStr);
-              const delta = parsed?.choices?.[0]?.delta?.content || "";
-              if (delta) {
-                assistantMsg.content += delta;
-                if (targetEl) {
-                  targetEl.innerHTML = renderMarkdown(assistantMsg.content);
-                  chat.scrollTop = chat.scrollHeight;
-                }
+          if (!line.startsWith("data:")) continue;
+
+          const dataStr = line.slice(5).trim();
+          if (dataStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            const delta = parsed?.choices?.[0]?.delta?.content || "";
+
+            if (delta) {
+              assistantMsg.content += delta;
+              if (targetEl) {
+                targetEl.innerHTML = renderMarkdown(assistantMsg.content);
+                chat.scrollTop = chat.scrollHeight;
               }
-            } catch (e) {}
-          }
+            }
+          } catch (_) {}
         }
       }
     }
   } catch (e) {
-    assistantMsg.content += e.name === "AbortError" ? "\n\n*[Зупинено]*" : `\n\nПомилка: ${e.message}`;
-    const msgEls = chat.querySelectorAll('.message.assistant .message-content');
-    if(msgEls.length > 0) msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
+    if (e?.name === "AbortError") {
+      assistantMsg.content += "\n\n*[Генерацію зупинено]*";
+    } else {
+      assistantMsg.content += `\n\nПомилка: ${e.message}`;
+    }
+
+    const msgEls = chat.querySelectorAll(".message.assistant .message-content");
+    if (msgEls.length > 0) {
+      msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
+    }
   } finally {
     currentController = null;
+    active.updatedAt = Date.now();
     saveState();
     renderAll();
     setBusy(false, "Готово");
   }
 }
 
-// Події інтерфейсу
-form?.addEventListener("submit", (e) => { e.preventDefault(); const text = promptInput?.value.trim(); if (text) sendChatMessage(text); });
+form?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = promptInput?.value.trim();
+  if (text) sendChatMessage(text);
+});
+
 promptInput?.addEventListener("input", autoResize);
-promptInput?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form?.requestSubmit(); } });
+
+promptInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form?.requestSubmit();
+  }
+});
+
 stopBtn?.addEventListener("click", () => currentController?.abort());
-clearBtn?.addEventListener("click", () => { ensureChat().messages = []; saveState(); renderAll(); });
-newChatBtn?.addEventListener("click", () => { state.activeChatId = null; ensureChat(); renderAll(); });
-fastModeBtn?.addEventListener("click", () => { state.mode = "fast"; saveState(); renderAll(); });
-smartModeBtn?.addEventListener("click", () => { state.mode = "smart"; saveState(); renderAll(); });
+
+clearBtn?.addEventListener("click", () => {
+  const active = ensureChat();
+  active.messages = [];
+  active.title = "Новий чат";
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+});
+
+newChatBtn?.addEventListener("click", () => {
+  state.activeChatId = null;
+  ensureChat();
+  renderAll();
+});
+
+fastModeBtn?.addEventListener("click", () => {
+  state.mode = "fast";
+  saveState();
+  renderAll();
+});
+
+smartModeBtn?.addEventListener("click", () => {
+  state.mode = "smart";
+  saveState();
+  renderAll();
+});
 
 imageBtn?.addEventListener("click", () => imageInput?.click());
+
 imageInput?.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   if (!file) return;
-  selectedImage = { name: file.name, dataUrl: await fileToDataUrl(file) };
-  updateSelectedImageUI();
+
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    selectedImage = { name: file.name, type: file.type, dataUrl };
+    updateSelectedImageUI();
+  } catch (e) {
+    alert("Помилка фото");
+  }
 });
+
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-// Логіка Авторизації Supabase
-sb.auth.onAuthStateChange(async (_event, session) => {
+sb.auth.onAuthStateChange?.((_event, session) => {
   currentUser = session?.user || null;
   renderAuthState();
 });
 
-sb.auth.getSession().then(({data}) => {
+sb.auth.getSession?.().then(({ data }) => {
   currentUser = data?.session?.user || null;
   renderAuthState();
-}).catch(()=>{});
+}).catch(() => {});
 
 googleLoginBtn?.addEventListener("click", async () => {
-  if (!sb.auth.signInWithOAuth) { alert("Supabase не підключено"); return; }
-  await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" }});
+  if (!sb?.auth?.signInWithOAuth) {
+    alert("Supabase не підключено");
+    return;
+  }
+
+  await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin + "/"
+    }
+  });
 });
 
 logoutBtn?.addEventListener("click", async () => {
-  if (!sb.auth.signOut) return;
+  if (!sb?.auth?.signOut) return;
   await sb.auth.signOut();
   currentUser = null;
   renderAuthState();
 });
 
-// Ініціалізація
 renderAll();
 autoResize();
+updateSelectedImageUI();
+updateStatus("Готово");
