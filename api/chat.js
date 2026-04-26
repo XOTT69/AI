@@ -98,9 +98,17 @@ export default async function handler(req, res) {
       messages: safeMessages,
       temperature: thinking ? Math.max(modeConfig.temperature, 0.25) : modeConfig.temperature,
       top_p: 0.9,
-      max_tokens: thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens,
+      // Для DeepSeek-v4 жорстко обмежуємо токени, щоб не було тайм-ауту NIM
+      max_tokens: selectedModel.includes("v4") ? 2048 : (thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens),
       stream: true 
     };
+
+    // СПЕЦІАЛЬНИЙ ФІКС ДЛЯ DEEPSEEK V4: Додаємо параметр reasoning, якщо юзер вибрав "Думаю"
+    if (selectedModel.includes("deepseek-v4") && thinking) {
+      requestPayload.reasoning_effort = "high"; // Це офіційний параметр NVIDIA NIM для вмикання мислення
+    } else if (selectedModel.includes("deepseek-v4") && !thinking) {
+      requestPayload.reasoning_effort = "none";
+    }
 
     const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
@@ -156,8 +164,16 @@ export default async function handler(req, res) {
 
               try {
                 const json = JSON.parse(payload);
+                // ФІКС: DeepSeek V4 може віддавати порожні чанки, поки думає (reasoning_content)
                 const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
-                if (deltaContent) sendSSE(res, { type: "content", content: deltaContent });
+                const reasoningContent = json?.choices?.[0]?.delta?.reasoning_content ?? "";
+                
+                if (deltaContent) {
+                  sendSSE(res, { type: "content", content: deltaContent });
+                } else if (reasoningContent && thinking) {
+                  // Якщо модель думає, виводимо думки як контент (можна курсивом, але поки просто текст)
+                  sendSSE(res, { type: "content", content: reasoningContent });
+                }
               } catch (err) {}
             }
           }
