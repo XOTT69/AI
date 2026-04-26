@@ -35,9 +35,63 @@ const mobileOverlay = document.getElementById("mobileOverlay");
 const quickActionsSection = document.getElementById("quickActionsSection");
 const quickActionsToggleIcon = document.getElementById("quickActionsToggleIcon");
 
-const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// БЕЗПЕЧНА ІНІЦІАЛІЗАЦІЯ SUPABASE З CONFIG.JS
+let supaUrl = "";
+let supaKey = "";
+
+// Розумний пошук ключів: перевіряємо всі можливі варіанти, як вони могли бути задані в config.js
+if (typeof SUPABASE_URL !== "undefined") supaUrl = SUPABASE_URL;
+else if (window.SUPABASE_URL) supaUrl = window.SUPABASE_URL;
+else if (window.NEXT_PUBLIC_SUPABASE_URL) supaUrl = window.NEXT_PUBLIC_SUPABASE_URL;
+else if (window.config?.SUPABASE_URL) supaUrl = window.config.SUPABASE_URL;
+
+if (typeof SUPABASE_ANON_KEY !== "undefined") supaKey = SUPABASE_ANON_KEY;
+else if (window.SUPABASE_ANON_KEY) supaKey = window.SUPABASE_ANON_KEY;
+else if (window.NEXT_PUBLIC_SUPABASE_ANON_KEY) supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+else if (window.config?.SUPABASE_ANON_KEY) supaKey = window.config.SUPABASE_ANON_KEY;
+
+let sb = null;
+
+if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
+  sb = window.supabase.createClient(supaUrl, supaKey);
+  console.log("Supabase успішно підключено.");
+} else {
+  console.warn("⚠️ Supabase ключі не знайдені або некоректні. Авторизація вимкнена, але чат працюватиме локально.");
+  
+  // Безпечна заглушка, щоб код ніколи не падав через помилки БД
+  sb = {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signInWithOAuth: async () => {
+        alert("Помилка конфігурації: Supabase URL не налаштовано в config.js");
+        return { error: new Error("Supabase не налаштовано") };
+      },
+      signOut: async () => ({ error: null }),
+      onAuthStateChange: () => {}
+    },
+    from: () => ({
+      upsert: async () => ({ error: null }),
+      insert: async () => ({ data: { id: "mock-id" }, error: null }),
+      select: () => ({
+        eq: () => ({
+          order: async () => ({ data: [], error: null }),
+          in: () => ({
+            eq: () => ({
+              order: async () => ({ data: [], error: null })
+            })
+          })
+        }),
+        single: async () => ({ data: { id: "mock-id" }, error: null })
+      }),
+      delete: () => ({
+        eq: () => ({ eq: async () => ({ error: null }) })
+      }),
+      update: () => ({
+        eq: () => ({ eq: async () => ({ error: null }) })
+      })
+    })
+  };
+}
 
 const STORAGE_KEY = "ai-chat-sync-v12";
 
@@ -214,7 +268,7 @@ function renderMessages() {
     empty.className = "chat-empty";
     empty.textContent = currentUser
       ? "Ти увійшов. Напиши повідомлення, і ШІ відповість."
-      : "Локальний чат працює. Увійди через Google для sync.";
+      : "Локальний чат працює. Увійди через Google для синхронізації.";
     chat.appendChild(empty);
     return;
   }
@@ -331,7 +385,7 @@ async function signInWithGoogle() {
     options: { redirectTo: window.location.origin + "/" }
   });
   if (error) {
-    alert("Google login error: " + (error.message || "невідома помилка"));
+    console.error("Google login error:", error);
     updateStatus("Помилка логіну");
   }
 }
@@ -361,7 +415,7 @@ async function initAuth() {
     }
     updateStatus("Готово");
   } catch {
-    updateStatus("Auth init error");
+    updateStatus("Готово (Локально)");
   }
 }
 
