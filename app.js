@@ -39,7 +39,7 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v2";
+const STORAGE_KEY = "ai-chat-sync-v3";
 
 let currentUser = null;
 let selectedImage = null;
@@ -218,7 +218,7 @@ function renderMessages() {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
     empty.textContent = currentUser
-      ? "Ти увійшов. Можна писати, а потім синхронізувати."
+      ? "Ти увійшов. Напиши повідомлення, і ШІ відповість."
       : "Локальний чат працює. Увійди через Google для sync.";
     chat.appendChild(empty);
     return;
@@ -413,7 +413,86 @@ function addUserMessage(text) {
   return msg;
 }
 
-function addAssistantMessage(text) {
+function createAssistantStreamingBubble() {
+  const wrap = document.createElement("div");
+  wrap.className = "message assistant typing";
+
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  inner.textContent = "Думаю...";
+
+  wrap.appendChild(inner);
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+
+  return { wrap, inner };
+}
+
+function setBusy(isBusy, status = "Готово") {
+  requestInFlight = isBusy;
+  sendBtn.disabled = isBusy;
+  stopBtn.disabled = !isBusy;
+  updateStatus(status);
+}
+
+function trimMessages(messages, maxItems = 12) {
+  return messages.slice(-maxItems).map((m) => ({
+    role: m.role,
+    content: m.content
+  }));
+}
+
+function getModePayload() {
+  return {
+    responseMode: state.mode === "smart" ? "smart" : "fast"
+  };
+}
+
+async function* parseSSEStream(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+
+      for (const event of events) {
+        const lines = event.split("\n");
+        const dataLines = [];
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(":")) continue;
+          if (trimmed.startsWith("data:")) {
+            dataLines.push(trimmed.slice(5).trim());
+          }
+        }
+
+        const data = dataLines.join("");
+        if (!data) continue;
+
+        if (data === "[DONE]") {
+          yield { type: "__done__" };
+          continue;
+        }
+
+        try {
+          yield JSON.parse(data);
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function appendAssistantMessage(text) {
   const active = ensureChat();
 
   const msg = {
@@ -432,12 +511,74 @@ function addAssistantMessage(text) {
 }
 
 async function sendChatMessage(text) {
+  const active = ensureChat();
+
   addUserMessage(text);
   promptInput.value = "";
   autoResize();
-  clearSelectedImage();
 
-  addAssistantMessage("Повідомлення збережене локально. Натисни `Синхронізувати`, щоб залити його в Supabase.");
+  const bubble = createAssistantStreamingBubble();
+  let contentText = "";
+
+  setBusy(true, "Генерація відповіді...");
+
+  try {
+    currentController = new AbortController();
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: modelSelect.value,
+        thinking: thinkingCheckbox.checked,
+        messages: trimMessages(active.messages, 12),
+        image: selectedImage?.dataUrl ? {
+          dataUrl: selectedImage.dataUrl,
+          name: selectedImage.name,
+          type: selectedImage.type
+        } : null,
+        stream: true,
+        ...getModePayload()
+      }),
+      signal: currentController.signal
+    });
+
+    if (!response.ok || !response.body) {
+      const raw = await response.text();
+      throw new Error(raw || `HTTP ${response.status}`);
+    }
+
+    clearSelectedImage();
+
+    for await (const event of parseSSEStream(response.body)) {
+      if (event.type === "__done__" || event.type === "done") {
+        continue;
+      }
+
+      if (event.type === "content") {
+        contentText += event.content || "";
+        bubble.inner.textContent = contentText || "Думаю...";
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      if (event.type === "error") {
+        throw new Error(event.message || "Streaming error");
+      }
+    }
+
+    bubble.wrap.classList.remove("typing");
+    bubble.inner.innerHTML = renderMarkdown(contentText || "Порожня відповідь");
+    await appendAssistantMessage(contentText || "Порожня відповідь");
+  } catch (e) {
+    console.error(e);
+    bubble.wrap.classList.remove("typing");
+    bubble.inner.textContent = "Помилка: " + (e.message || "невідома помилка");
+  } finally {
+    currentController = null;
+    setBusy(false, "Готово");
+  }
 }
 
 function mapServerChat(row, messages = []) {
@@ -693,8 +834,14 @@ imageInput.addEventListener("change", async () => {
 
 removeImageBtn.addEventListener("click", clearSelectedImage);
 
-generateImageBtn.addEventListener("click", () => {
-  alert("Генерацію фото підключимо окремо після стабілізації sync.");
+generateImageBtn.addEventListener("click", async () => {
+  const prompt = promptInput.value.trim();
+  if (!prompt) {
+    alert("Спочатку введи опис для генерації зображення.");
+    return;
+  }
+
+  alert("Після чату підключимо і генерацію фото.");
 });
 
 stopBtn.addEventListener("click", () => {
