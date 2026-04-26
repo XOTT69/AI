@@ -39,12 +39,13 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v4";
+const STORAGE_KEY = "ai-chat-sync-v5";
 
 let currentUser = null;
 let selectedImage = null;
 let currentController = null;
 let requestInFlight = false;
+let currentTimeoutId = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
@@ -497,10 +498,12 @@ async function* parseSSEStream(stream) {
             continue;
           }
 
-          if (parsed.type || parsed.content || parsed.message) {
+          if (parsed.type || parsed.content || parsed.message || parsed.error) {
             yield parsed;
           }
-        } catch {}
+        } catch {
+          yield { type: "content", content: data };
+        }
       }
     }
   } finally {
@@ -526,6 +529,21 @@ async function appendAssistantMessage(text) {
   return msg;
 }
 
+function clearCurrentTimeout() {
+  if (currentTimeoutId) {
+    clearTimeout(currentTimeoutId);
+    currentTimeoutId = null;
+  }
+}
+
+function getTimeoutMs() {
+  const model = modelSelect.value;
+  if (model.includes("flash")) return 30000;
+  if (model.includes("glm")) return 60000;
+  if (model.includes("pro")) return 70000;
+  return 45000;
+}
+
 async function sendChatMessage(text) {
   const active = ensureChat();
 
@@ -538,13 +556,11 @@ async function sendChatMessage(text) {
 
   setBusy(true, "Генерація відповіді...");
 
-  const timeoutMs = modelSelect.value.includes("pro") ? 45000 : 20000;
-  const timeoutId = setTimeout(() => {
-    if (currentController) currentController.abort("timeout");
-  }, timeoutMs);
-
   try {
     currentController = new AbortController();
+    currentTimeoutId = setTimeout(() => {
+      if (currentController) currentController.abort();
+    }, getTimeoutMs());
 
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -565,44 +581,63 @@ async function sendChatMessage(text) {
       signal: currentController.signal
     });
 
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
       const raw = await response.text();
       throw new Error(raw || `HTTP ${response.status}`);
     }
 
-    clearSelectedImage();
-
-    for await (const event of parseSSEStream(response.body)) {
-      if (event.type === "__done__" || event.type === "done") continue;
-
-      if (event.type === "content") {
-        contentText += event.content || "";
-        bubble.inner.textContent = contentText || "Думаю...";
-        chat.scrollTop = chat.scrollHeight;
+    if (!response.body) {
+      const raw = await response.text();
+      if (raw) {
+        contentText = raw;
+      } else {
+        throw new Error("Порожня відповідь сервера");
       }
+    } else {
+      clearSelectedImage();
 
-      if (event.type === "error") {
-        throw new Error(event.message || "Streaming error");
+      for await (const event of parseSSEStream(response.body)) {
+        if (event.type === "__done__" || event.type === "done") continue;
+
+        if (event.type === "content") {
+          contentText += event.content || "";
+          bubble.inner.textContent = contentText || "Думаю...";
+          chat.scrollTop = chat.scrollHeight;
+          continue;
+        }
+
+        if (event.type === "error") {
+          throw new Error(event.message || event.error || "Streaming error");
+        }
+
+        if (event.message && String(event.message).toLowerCase().includes("terminated")) {
+          throw new Error("terminated");
+        }
       }
     }
 
-    clearTimeout(timeoutId);
+    clearCurrentTimeout();
 
     bubble.wrap.classList.remove("typing");
     bubble.inner.innerHTML = renderMarkdown(contentText || "Порожня відповідь");
     await appendAssistantMessage(contentText || "Порожня відповідь");
   } catch (e) {
-    clearTimeout(timeoutId);
+    clearCurrentTimeout();
     console.error(e);
 
     bubble.wrap.classList.remove("typing");
 
-    if (String(e?.name || "").includes("Abort") || String(e?.message || "").includes("timeout")) {
-      bubble.inner.textContent = "Модель відповідає занадто довго. Спробуй DeepSeek V4 Flash або вимкни складний режим.";
+    const msg = String(e?.message || "").toLowerCase();
+
+    if (e?.name === "AbortError") {
+      bubble.inner.textContent = "Модель відповідає занадто довго. Спробуй Flash або коротший запит.";
+    } else if (msg.includes("terminated")) {
+      bubble.inner.textContent = "Сервер обірвав генерацію. Спробуй Flash або вимкни Thinking.";
     } else {
       bubble.inner.textContent = "Помилка: " + (e.message || "невідома помилка");
     }
   } finally {
+    clearCurrentTimeout();
     currentController = null;
     setBusy(false, "Готово");
   }
@@ -644,10 +679,7 @@ async function ensureServerChat(chatObj) {
     .select("*")
     .single();
 
-  if (error) {
-    console.error(error);
-    throw error;
-  }
+  if (error) throw error;
 
   chatObj.serverId = data.id;
   chatObj.id = `local-${data.id}`;
@@ -681,10 +713,7 @@ async function replaceServerMessages(chatObj) {
 
   if (rows.length) {
     const { error } = await sb.from("messages").insert(rows);
-    if (error) {
-      console.error(error);
-      throw error;
-    }
+    if (error) throw error;
   }
 
   const { error: chatUpdateError } = await sb
@@ -696,10 +725,7 @@ async function replaceServerMessages(chatObj) {
     .eq("id", serverId)
     .eq("user_id", currentUser.id);
 
-  if (chatUpdateError) {
-    console.error(chatUpdateError);
-    throw chatUpdateError;
-  }
+  if (chatUpdateError) throw chatUpdateError;
 }
 
 async function syncActiveChat() {
@@ -805,15 +831,15 @@ async function deleteChat(chatId) {
   }
 }
 
-googleLoginBtn.addEventListener("click", signInWithGoogle);
-logoutBtn.addEventListener("click", signOut);
-syncBtn.addEventListener("click", syncActiveChat);
+googleLoginBtn?.addEventListener("click", signInWithGoogle);
+logoutBtn?.addEventListener("click", signOut);
+syncBtn?.addEventListener("click", syncActiveChat);
 
-newChatBtn.addEventListener("click", () => {
+newChatBtn?.addEventListener("click", () => {
   createLocalChat("Новий чат");
 });
 
-clearBtn.addEventListener("click", () => {
+clearBtn?.addEventListener("click", () => {
   const active = ensureChat();
   active.messages = [];
   active.title = "Новий чат";
@@ -822,26 +848,26 @@ clearBtn.addEventListener("click", () => {
   renderAll();
 });
 
-exportJsonBtn.addEventListener("click", exportJson);
-exportMdBtn.addEventListener("click", exportMd);
+exportJsonBtn?.addEventListener("click", exportJson);
+exportMdBtn?.addEventListener("click", exportMd);
 
-fastModeBtn.addEventListener("click", () => {
+fastModeBtn?.addEventListener("click", () => {
   state.mode = "fast";
   saveState();
   renderAll();
 });
 
-smartModeBtn.addEventListener("click", () => {
+smartModeBtn?.addEventListener("click", () => {
   state.mode = "smart";
   saveState();
   renderAll();
 });
 
-imageBtn.addEventListener("click", () => {
+imageBtn?.addEventListener("click", () => {
   imageInput.click();
 });
 
-imageInput.addEventListener("change", async () => {
+imageInput?.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   if (!file) return;
 
@@ -854,14 +880,13 @@ imageInput.addEventListener("change", async () => {
     };
     updateSelectedImageUI();
   } catch (e) {
-    console.error(e);
     alert(e.message || "Помилка фото");
   }
 });
 
-removeImageBtn.addEventListener("click", clearSelectedImage);
+removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-generateImageBtn.addEventListener("click", async () => {
+generateImageBtn?.addEventListener("click", async () => {
   const prompt = promptInput.value.trim();
   if (!prompt) {
     alert("Спочатку введи опис для генерації зображення.");
@@ -871,20 +896,20 @@ generateImageBtn.addEventListener("click", async () => {
   alert("Після чату підключимо і генерацію фото.");
 });
 
-stopBtn.addEventListener("click", () => {
-  if (currentController) currentController.abort("manual");
+stopBtn?.addEventListener("click", () => {
+  if (currentController) currentController.abort();
 });
 
-form.addEventListener("submit", async (e) => {
+form?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = promptInput.value.trim();
   if (!text || requestInFlight) return;
   await sendChatMessage(text);
 });
 
-promptInput.addEventListener("input", autoResize);
+promptInput?.addEventListener("input", autoResize);
 
-promptInput.addEventListener("keydown", (e) => {
+promptInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     form.requestSubmit();
