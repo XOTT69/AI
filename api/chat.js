@@ -1,33 +1,31 @@
-// ВАЖЛИВО: Запускаємо на Edge, щоб Vercel не обривав стрімінг через 10 секунд
 export const config = {
   runtime: 'edge'
 };
 
 const ALLOWED_MODELS = {
   "meta/llama-3.3-70b-instruct": {
-    label: "Llama 3.3 70B — База",
-    system: "Ти дуже швидкий і розумний AI-помічник. Відповідай українською мовою коротко і чітко.",
-    fast: { maxTokens: 1500, temperature: 0.2 },
-    smart: { maxTokens: 2500, temperature: 0.4 }
+    label: "Llama 3.3 70B",
+    system: "Ти швидкий, розумний і точний AI-помічник. Відповідай українською мовою.",
+    fast: { maxTokens: 2000, temperature: 0.2 },
+    smart: { maxTokens: 4000, temperature: 0.5 }
   },
-  "meta/llama-3.1-405b-instruct": {
-    label: "Llama 3.1 405B — Макс",
-    system: "Ти надпотужний AI-помічник. Відповідай українською мовою, чітко, максимально розумно і глибоко.",
-    fast: { maxTokens: 2000, temperature: 0.3 },
-    smart: { maxTokens: 4000, temperature: 0.6 }
+  "google/gemma-2-27b-it": {
+    label: "Gemma 2 27B",
+    system: "Ти дуже швидкий AI-помічник. Відповідай українською мовою коротко і чітко.",
+    fast: { maxTokens: 1500, temperature: 0.2 },
+    smart: { maxTokens: 3000, temperature: 0.4 }
   },
   "google/gemma-3-27b-it": {
-    label: "Gemma 3 (27B) — Фото й OCR",
+    label: "Gemma 3 27B",
     system: [
       "Ти мультимодальний AI-помічник для точного OCR, аналізу фото, скрінів і документів.",
-      "Відповідай українською.",
-      "Не вигадуй факти, не домислюй невидимий текст, не повторюй блоки тексту."
+      "Відповідай українською. Не вигадуй факти і не домислюй текст."
     ].join(" "),
     fast: { maxTokens: 2000, temperature: 0.1 },
     smart: { maxTokens: 4000, temperature: 0.2 }
   },
   "abacusai/dracarys-llama-3.1-70b-instruct": {
-    label: "Dracarys Llama (70B) — Код",
+    label: "Dracarys Llama 70B",
     system: "Ти AI-помічник експертного рівня для написання коду та аналітики. Відповідай українською.",
     fast: { maxTokens: 2000, temperature: 0.2 },
     smart: { maxTokens: 4000, temperature: 0.4 }
@@ -47,7 +45,7 @@ function buildVisionPrompt(userText = "") {
 }
 
 function normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image) {
-  if (image?.dataUrl && selectedModel === "google/gemma-3-27b-it") {
+  if (image?.dataUrl && selectedModel.includes("gemma-3")) {
     const lastUser = recentMessages.reverse().find(m => m?.role === "user");
     const visionPrompt = buildVisionPrompt(lastUser?.content || "");
     return [
@@ -83,17 +81,11 @@ export default async function handler(req) {
     const body = await req.json();
     const { messages, model, thinking, responseMode, image } = body;
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return new Response(JSON.stringify({ error: "Messages are required" }), { status: 400 });
-    }
-
-    // Якщо прийде стара Llama 8B, яка не працює, ми автоматично перемикаємо її на стабільну Llama 3.3 70B
     const fallbackModel = "meta/llama-3.3-70b-instruct";
-    let selectedModel = ALLOWED_MODELS[model] ? model : fallbackModel;
-    if (model === "meta/llama-3.1-8b-instruct") selectedModel = fallbackModel;
-
+    const selectedModel = ALLOWED_MODELS[model] ? model : fallbackModel;
     const modelConfig = ALLOWED_MODELS[selectedModel];
-    const recentMessages = trimMessages(messages, 10);
+    
+    const recentMessages = trimMessages(messages || [], 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
     const safeMessages = normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image);
 
@@ -106,15 +98,29 @@ export default async function handler(req) {
       stream: true 
     };
 
-    const upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream"
-      },
-      body: JSON.stringify(requestPayload)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000); 
+
+    let upstream;
+    try {
+      upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream"
+        },
+        body: JSON.stringify(requestPayload),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      return new Response(JSON.stringify({ 
+        error: "NVIDIA Timeout", 
+        details: "Сервери NVIDIA перевантажені і не відповіли. Спробуй іншу модель або повтори запит." 
+      }), { status: 504 });
+    }
 
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text();
@@ -122,9 +128,9 @@ export default async function handler(req) {
     }
 
     const stream = new ReadableStream({
-      async start(controller) {
+      async start(streamController) {
         const metaPayload = `data: ${JSON.stringify({ type: "meta", label: modelConfig.label, model: selectedModel })}\n\n`;
-        controller.enqueue(new TextEncoder().encode(metaPayload));
+        streamController.enqueue(new TextEncoder().encode(metaPayload));
 
         const reader = upstream.body.getReader();
         const decoder = new TextDecoder("utf-8");
@@ -146,9 +152,9 @@ export default async function handler(req) {
                 if (trimmed.startsWith("data:")) {
                   const payload = trimmed.slice(5).trim();
                   if (payload === "[DONE]") {
-                    controller.enqueue(new TextEncoder().encode(`data: {"type":"done"}\n\n`));
-                    controller.enqueue(new TextEncoder().encode(`data: [DONE]\n\n`));
-                    controller.close();
+                    streamController.enqueue(new TextEncoder().encode(`data: {"type":"done"}\n\n`));
+                    streamController.enqueue(new TextEncoder().encode(`data: [DONE]\n\n`));
+                    streamController.close();
                     return;
                   }
 
@@ -157,17 +163,17 @@ export default async function handler(req) {
                     const deltaContent = json?.choices?.[0]?.delta?.content ?? "";
                     if (deltaContent) {
                       const contentPayload = `data: ${JSON.stringify({ type: "content", content: deltaContent })}\n\n`;
-                      controller.enqueue(new TextEncoder().encode(contentPayload));
+                      streamController.enqueue(new TextEncoder().encode(contentPayload));
                     }
                   } catch (err) {}
                 }
               }
             }
           }
-          controller.close();
+          streamController.close();
         } catch (e) {
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "error", message: "Stream crashed" })}\n\n`));
-          controller.close();
+          streamController.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "error", message: "Stream crashed" })}\n\n`));
+          streamController.close();
         }
       }
     });
