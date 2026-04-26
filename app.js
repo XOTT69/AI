@@ -13,14 +13,11 @@ const fastModeBtn = document.getElementById("fastModeBtn");
 const smartModeBtn = document.getElementById("smartModeBtn");
 const imageBtn = document.getElementById("imageBtn");
 const imageInput = document.getElementById("imageInput");
-const generateImageBtn = document.getElementById("generateImageBtn");
 const selectedImageBar = document.getElementById("selectedImageBar");
 const selectedImageName = document.getElementById("selectedImageName");
 const selectedImageHint = document.getElementById("selectedImageHint");
 const selectedImagePreview = document.getElementById("selectedImagePreview");
 const removeImageBtn = document.getElementById("removeImageBtn");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportMdBtn = document.getElementById("exportMdBtn");
 const statusText = document.getElementById("statusText");
 const googleLoginBtn = document.getElementById("googleLoginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
@@ -32,14 +29,13 @@ const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
-const quickActionsSection = document.getElementById("quickActionsSection");
-const quickActionsToggleIcon = document.getElementById("quickActionsToggleIcon");
+const exportJsonBtn = document.getElementById("exportJsonBtn");
+const exportMdBtn = document.getElementById("exportMdBtn");
 
-// БЕЗПЕЧНА ІНІЦІАЛІЗАЦІЯ SUPABASE З CONFIG.JS
+// 1. БЕЗПЕЧНА ІНІЦІАЛІЗАЦІЯ SUPABASE
 let supaUrl = "";
 let supaKey = "";
 
-// Розумний пошук ключів: перевіряємо всі можливі варіанти, як вони могли бути задані в config.js
 if (typeof SUPABASE_URL !== "undefined") supaUrl = SUPABASE_URL;
 else if (window.SUPABASE_URL) supaUrl = window.SUPABASE_URL;
 else if (window.NEXT_PUBLIC_SUPABASE_URL) supaUrl = window.NEXT_PUBLIC_SUPABASE_URL;
@@ -54,47 +50,27 @@ let sb = null;
 
 if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
-  console.log("Supabase успішно підключено.");
+  console.log("Supabase підключено");
 } else {
-  console.warn("⚠️ Supabase ключі не знайдені або некоректні. Авторизація вимкнена, але чат працюватиме локально.");
-  
-  // Безпечна заглушка, щоб код ніколи не падав через помилки БД
+  console.warn("Supabase не налаштовано. Працюємо локально.");
   sb = {
     auth: {
       getSession: async () => ({ data: { session: null }, error: null }),
-      signInWithOAuth: async () => {
-        alert("Помилка конфігурації: Supabase URL не налаштовано в config.js");
-        return { error: new Error("Supabase не налаштовано") };
-      },
+      signInWithOAuth: async () => { alert("Supabase не налаштовано"); return { error: new Error("Missing config") }; },
       signOut: async () => ({ error: null }),
       onAuthStateChange: () => {}
     },
     from: () => ({
       upsert: async () => ({ error: null }),
-      insert: async () => ({ data: { id: "mock-id" }, error: null }),
-      select: () => ({
-        eq: () => ({
-          order: async () => ({ data: [], error: null }),
-          in: () => ({
-            eq: () => ({
-              order: async () => ({ data: [], error: null })
-            })
-          })
-        }),
-        single: async () => ({ data: { id: "mock-id" }, error: null })
-      }),
-      delete: () => ({
-        eq: () => ({ eq: async () => ({ error: null }) })
-      }),
-      update: () => ({
-        eq: () => ({ eq: async () => ({ error: null }) })
-      })
+      insert: async () => ({ data: { id: "mock" }, error: null }),
+      select: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }), single: async () => ({ data: { id: "mock" }, error: null }), in: () => ({ eq: () => ({ order: async () => ({ data: [], error: null }) }) }) }) }),
+      delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+      update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) })
     })
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v12";
-
+const STORAGE_KEY = "ai-chat-sync-v14";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -102,84 +78,30 @@ let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
-  state = {
-    activeChatId: null,
-    chats: [],
-    mode: "fast"
-  };
+  state = { activeChatId: null, chats: [], mode: "fast" };
 }
 
 marked.setOptions({ breaks: true, gfm: true });
 
-function uid() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function updateStatus(text) { if (statusText) statusText.textContent = text; }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function updateStatus(text) {
-  if (statusText) statusText.textContent = text;
-}
-
-function closeMobileSidebar() {
-  if (!sidebar || !mobileOverlay) return;
-  if (window.innerWidth > 960) return;
-  sidebar.classList.remove("open");
-  mobileOverlay.classList.remove("show");
-  document.body.classList.remove("no-scroll");
-}
-
-function closeAllChatMenus() {
-  document.querySelectorAll(".chat-menu.show").forEach((el) => el.classList.remove("show"));
-}
-
-function getActiveChat() {
-  return state.chats.find(c => c.id === state.activeChatId) || null;
-}
+function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
 function ensureChat() {
   let active = getActiveChat();
-  if (!active) active = createLocalChat("Новий чат");
+  if (!active) {
+    active = { id: uid(), serverId: null, title: "Новий чат", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+    state.chats.unshift(active);
+    state.activeChatId = active.id;
+    saveState();
+    renderAll();
+  }
   return active;
 }
 
-function createLocalChat(initialTitle = "Новий чат", forcedId = null) {
-  const chatObj = {
-    id: forcedId || uid(),
-    serverId: null,
-    title: initialTitle,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    messages: []
-  };
-  state.chats.unshift(chatObj);
-  state.activeChatId = chatObj.id;
-  saveState();
-  renderAll();
-  closeMobileSidebar();
-  return chatObj;
-}
-
-function updateChatTitle(chatObj) {
-  const firstUser = chatObj.messages.find(m => m.role === "user");
-  if (!firstUser) return;
-  const text = String(firstUser.content || "").trim();
-  chatObj.title = text ? text.slice(0, 40) : "Новий чат";
-}
-
-function switchChat(chatId) {
-  if (requestInFlight) return;
-  state.activeChatId = chatId;
-  saveState();
-  renderAll();
-  closeMobileSidebar();
-}
-
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text || ""));
-}
+function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text || "")); }
 
 function renderAuthState() {
   if (!authLoggedOut || !authLoggedIn) return;
@@ -202,57 +124,46 @@ function renderChatList() {
   for (const item of state.chats) {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
-
     const title = document.createElement("div");
     title.className = "chat-item-title";
     title.textContent = item.title || "Новий чат";
-
     const meta = document.createElement("div");
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
-
     const menuWrap = document.createElement("div");
     menuWrap.className = "chat-menu-wrap";
-
     const menuBtn = document.createElement("button");
-    menuBtn.type = "button";
     menuBtn.className = "chat-menu-btn";
     menuBtn.textContent = "⋯";
-
     const menu = document.createElement("div");
     menu.className = "chat-menu";
-
+    
     const openBtn = document.createElement("button");
-    openBtn.type = "button";
     openBtn.textContent = "Відкрити";
-    openBtn.addEventListener("click", (e) => {
+    openBtn.onclick = (e) => { e.stopPropagation(); state.activeChatId = item.id; saveState(); renderAll(); };
+    
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "Видалити";
+    delBtn.className = "danger";
+    delBtn.onclick = (e) => {
       e.stopPropagation();
-      menu.classList.remove("show");
-      switchChat(item.id);
-    });
+      if(confirm("Видалити чат?")) {
+        state.chats = state.chats.filter(c => c.id !== item.id);
+        if(state.activeChatId === item.id) state.activeChatId = state.chats[0]?.id || null;
+        saveState(); renderAll();
+      }
+    };
 
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.textContent = "Видалити";
-    deleteBtn.className = "danger";
-    deleteBtn.addEventListener("click", async (e) => {
+    menuBtn.onclick = (e) => {
       e.stopPropagation();
-      menu.classList.remove("show");
-      await deleteChat(item.id);
-    });
-
-    menuBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      document.querySelectorAll(".chat-menu.show").forEach((el) => {
-        if (el !== menu) el.classList.remove("show");
-      });
+      document.querySelectorAll(".chat-menu.show").forEach(el => { if(el !== menu) el.classList.remove("show"); });
       menu.classList.toggle("show");
-    });
+    };
 
-    menu.append(openBtn, deleteBtn);
+    menu.append(openBtn, delBtn);
     menuWrap.append(menuBtn, menu);
     div.append(title, meta, menuWrap);
-    div.addEventListener("click", () => switchChat(item.id));
+    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); }};
     chatList.appendChild(div);
   }
 }
@@ -266,9 +177,7 @@ function renderMessages() {
   if (!active.messages.length) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
-    empty.textContent = currentUser
-      ? "Ти увійшов. Напиши повідомлення, і ШІ відповість."
-      : "Локальний чат працює. Увійди через Google для синхронізації.";
+    empty.textContent = "Напиши повідомлення, і ШІ відповість.";
     chat.appendChild(empty);
     return;
   }
@@ -284,7 +193,7 @@ function renderMessages() {
     } else {
       inner.textContent = msg.content || "";
     }
-
+    
     if (msg.image?.dataUrl) {
       const img = document.createElement("img");
       img.src = msg.image.dataUrl;
@@ -313,17 +222,14 @@ function autoResize() {
 }
 
 function updateSelectedImageUI() {
-  if (!selectedImageBar || !selectedImageName || !selectedImageHint || !selectedImagePreview) return;
+  if (!selectedImageBar || !selectedImageName || !selectedImagePreview) return;
   if (!selectedImage) {
     selectedImageBar.classList.add("hidden");
-    selectedImageName.textContent = "Фото не вибрано";
-    selectedImageHint.textContent = "Фото буде відправлено разом із наступним повідомленням.";
     selectedImagePreview.removeAttribute("src");
     return;
   }
   selectedImageBar.classList.remove("hidden");
-  selectedImageName.textContent = selectedImage.name || "selected-image";
-  selectedImageHint.textContent = "Фото прикріплене.";
+  selectedImageName.textContent = selectedImage.name || "Зображення";
   selectedImagePreview.src = selectedImage.dataUrl;
 }
 
@@ -342,490 +248,111 @@ function fileToDataUrl(file) {
   });
 }
 
-function exportJson() {
-  const active = ensureChat();
-  const blob = new Blob([JSON.stringify(active, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "chat.json";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function exportMd() {
-  const active = ensureChat();
-  const text = active.messages.map(m => `## ${m.role}\n\n${m.content || ""}`).join("\n\n");
-  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "chat.md";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function ensureProfile(user) {
-  if (!user) return;
-  const meta = user.user_metadata || {};
-  await sb.from("profiles").upsert({
-    id: user.id,
-    email: user.email || null,
-    full_name: meta.full_name || meta.name || null,
-    avatar_url: meta.avatar_url || meta.picture || null,
-    provider: user.app_metadata?.provider || "google",
-    updated_at: new Date().toISOString()
-  });
-}
-
-async function signInWithGoogle() {
-  updateStatus("Перехід у Google...");
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo: window.location.origin + "/" }
-  });
-  if (error) {
-    console.error("Google login error:", error);
-    updateStatus("Помилка логіну");
-  }
-}
-
-async function signOut() {
-  const { error } = await sb.auth.signOut();
-  if (error) {
-    alert("Logout error: " + (error.message || "невідома помилка"));
-    return;
-  }
-  currentUser = null;
-  renderAuthState();
-  updateStatus("Вийшов");
-}
-
-async function initAuth() {
-  try {
-    const { data, error } = await sb.auth.getSession();
-    if (error) {
-      updateStatus("Помилка сесії");
-      return;
-    }
-    currentUser = data?.session?.user || null;
-    renderAuthState();
-    if (currentUser) {
-      await ensureProfile(currentUser);
-    }
-    updateStatus("Готово");
-  } catch {
-    updateStatus("Готово (Локально)");
-  }
-}
-
-function addUserMessage(text) {
-  const active = ensureChat();
-  const msg = {
-    id: uid(),
-    role: "user",
-    content: text,
-    createdAt: Date.now()
-  };
-  if (selectedImage?.dataUrl) {
-    msg.image = {
-      name: selectedImage.name,
-      type: selectedImage.type,
-      dataUrl: selectedImage.dataUrl
-    };
-  }
-  active.messages.push(msg);
-  active.updatedAt = Date.now();
-  updateChatTitle(active);
-  saveState();
-  renderAll();
-  return msg;
-}
-
-function addAssistantMessage(text) {
-  const active = ensureChat();
-  const msg = {
-    id: uid(),
-    role: "assistant",
-    content: text,
-    createdAt: Date.now()
-  };
-  active.messages.push(msg);
-  active.updatedAt = Date.now();
-  saveState();
-  renderAll();
-  return msg;
-}
-
 function setBusy(isBusy, status = "Готово") {
   requestInFlight = isBusy;
   if (sendBtn) sendBtn.disabled = isBusy;
   if (stopBtn) stopBtn.disabled = !isBusy;
-
-  if (isBusy) {
-    const model = modelSelect?.value || "";
-    const mode = state.mode;
-
-    if (model.includes("flash")) {
-      updateStatus(mode === "smart" ? "Flash працює в розумному режимі..." : "Flash генерує відповідь...");
-      return;
-    }
-    if (model.includes("dracarys") || model.includes("llama")) {
-      updateStatus(mode === "smart" ? "Llama 70B працює з кодом..." : "Llama 70B генерує відповідь...");
-      return;
-    }
-    if (model.includes("gemma")) {
-      updateStatus(mode === "smart" ? "Gemma аналізує зображення..." : "Gemma генерує відповідь...");
-      return;
-    }
-    if (model.includes("pro")) {
-      updateStatus(mode === "smart" ? "DeepSeek Pro думає глибше..." : "DeepSeek Pro генерує відповідь...");
-      return;
-    }
-  }
   updateStatus(status);
 }
 
-function trimMessages(messages, maxItems = 10) {
-  return messages.slice(-maxItems).map((m) => ({
-    role: m.role,
-    content: m.content
-  }));
-}
-
-function buildRequestPayload() {
-  return {
-    model: modelSelect?.value || "deepseek-ai/deepseek-v4-flash",
-    thinking: !!thinkingCheckbox?.checked,
-    responseMode: state.mode === "smart" ? "smart" : "fast",
-    stream: false
-  };
-}
-
-function parseAssistantPayload(raw) {
-  if (!raw) return { content: "" };
-  try {
-    const json = JSON.parse(raw);
-    return {
-      content:
-        json.content ||
-        json.text ||
-        json.answer ||
-        json.response ||
-        json.output_text ||
-        json.message?.content ||
-        json.message ||
-        json.choices?.[0]?.message?.content ||
-        json.choices?.[0]?.text ||
-        "",
-      model: json.model || null,
-      label: json.label || null,
-      error: json.error || null,
-      details: json.details || null
-    };
-  } catch {
-    return { content: raw };
-  }
-}
-
+// ОСНОВНА ФУНКЦІЯ СТРІМІНГУ (ПОСТУПОВИЙ ДРУК)
 async function sendChatMessage(text) {
   if (requestInFlight) return;
   const active = ensureChat();
-  addUserMessage(text);
+  
+  active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage, createdAt: Date.now() });
+  
+  if (active.messages.length === 1) active.title = text.slice(0, 40);
+  
   promptInput.value = "";
   autoResize();
-
-  const assistantMsg = addAssistantMessage("Думаю...");
-  setBusy(true, "Генерація відповіді...");
+  
+  const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
+  active.messages.push(assistantMsg);
+  renderAll(); // Малює порожній блок для ШІ
+  
+  setBusy(true, "Генерація...");
+  clearSelectedImage();
 
   const controller = new AbortController();
   currentController = controller;
 
   try {
-    const requestOptions = buildRequestPayload();
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: requestOptions.model,
-        thinking: requestOptions.thinking,
-        responseMode: requestOptions.responseMode,
-        stream: requestOptions.stream,
-        messages: trimMessages(active.messages, 10),
-        image: selectedImage?.dataUrl ? {
-          dataUrl: selectedImage.dataUrl,
-          name: selectedImage.name,
-          type: selectedImage.type
-        } : null
+        model: modelSelect?.value || "deepseek-ai/deepseek-v3",
+        thinking: !!thinkingCheckbox?.checked,
+        responseMode: state.mode,
+        stream: true, // Стрімінг увімкнено
+        messages: active.messages.slice(-10).filter(m => m.id !== assistantMsg.id),
+        image: selectedImage?.dataUrl ? { dataUrl: selectedImage.dataUrl } : null
       })
     });
 
-    const raw = await response.text();
-    const parsed = parseAssistantPayload(raw);
+    if (!response.ok) throw new Error("Сервер повернув помилку " + response.status);
 
-    if (!response.ok) {
-      throw new Error(parsed.details || parsed.error || raw || `HTTP ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    // Знаходимо DOM-елемент, куди будемо "друкувати" текст
+    const msgEls = chat.querySelectorAll('.message.assistant .message-content');
+    const targetEl = msgEls[msgEls.length - 1];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        const lines = part.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data:")) {
+            const dataStr = line.slice(5).trim();
+            if (dataStr === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === "content" && parsed.content) {
+                assistantMsg.content += parsed.content;
+                // Плавне оновлення екрану
+                if (targetEl) {
+                  targetEl.innerHTML = renderMarkdown(assistantMsg.content);
+                  chat.scrollTop = chat.scrollHeight;
+                }
+              }
+            } catch (e) {}
+          }
+        }
+      }
     }
-
-    clearSelectedImage();
-    assistantMsg.content = parsed.content || "Порожня відповідь";
-    active.updatedAt = Date.now();
-    saveState();
-    renderAll();
   } catch (e) {
     if (e?.name === "AbortError") {
-      assistantMsg.content = "Запит зупинено.";
+      assistantMsg.content += "\n\n*[Генерацію зупинено]*";
     } else {
-      console.error(e);
-      assistantMsg.content = "Помилка: " + (e.message || "невідома помилка");
+      assistantMsg.content = "Помилка: " + e.message;
     }
+    const msgEls = chat.querySelectorAll('.message.assistant .message-content');
+    if(msgEls.length > 0) msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
+  } finally {
+    currentController = null;
     active.updatedAt = Date.now();
     saveState();
     renderAll();
-  } finally {
-    if (currentController === controller) {
-      currentController = null;
-    }
     setBusy(false, "Готово");
   }
 }
 
-function mapServerChat(row, messages = []) {
-  return {
-    id: `local-${row.id}`,
-    serverId: row.id,
-    title: row.title || "Новий чат",
-    createdAt: new Date(row.created_at).getTime(),
-    updatedAt: new Date(row.updated_at).getTime(),
-    messages: messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      createdAt: new Date(m.created_at).getTime(),
-      image: m.image_data_url ? {
-        name: m.image_name || "image",
-        type: m.image_type || "image/png",
-        dataUrl: m.image_data_url
-      } : null
-    }))
-  };
-}
-
-async function ensureServerChat(chatObj) {
-  if (!currentUser) return null;
-  if (chatObj.serverId) return chatObj.serverId;
-  const oldId = chatObj.id;
-  const { data, error } = await sb
-    .from("chats")
-    .insert({
-      user_id: currentUser.id,
-      title: chatObj.title || "Новий чат"
-    })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  chatObj.serverId = data.id;
-  chatObj.id = `local-${data.id}`;
-  if (state.activeChatId === oldId) {
-    state.activeChatId = chatObj.id;
-  }
-  saveState();
-  renderAll();
-  return data.id;
-}
-
-async function replaceServerMessages(chatObj) {
-  if (!currentUser || !chatObj) return;
-  const serverId = await ensureServerChat(chatObj);
-  await sb.from("messages").delete().eq("chat_id", serverId).eq("user_id", currentUser.id);
-
-  const rows = chatObj.messages.map((m) => ({
-    chat_id: serverId,
-    user_id: currentUser.id,
-    role: m.role,
-    content: m.content || "",
-    image_name: m.image?.name || null,
-    image_type: m.image?.type || null,
-    image_data_url: m.image?.dataUrl || null
-  }));
-
-  if (rows.length) {
-    const { error } = await sb.from("messages").insert(rows);
-    if (error) throw error;
-  }
-
-  const { error: chatUpdateError } = await sb
-    .from("chats")
-    .update({
-      title: chatObj.title || "Новий чат",
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", serverId)
-    .eq("user_id", currentUser.id);
-
-  if (chatUpdateError) throw chatUpdateError;
-}
-
-async function syncActiveChat() {
-  if (!currentUser) {
-    alert("Спочатку увійди через Google");
-    return;
-  }
-  const active = ensureChat();
-  updateStatus("Синхронізація...");
-  try {
-    await ensureProfile(currentUser);
-    await replaceServerMessages(active);
-    updateStatus("Синхронізовано");
-  } catch (e) {
-    updateStatus("Помилка sync");
-    alert("Sync error: " + (e.message || "невідома помилка"));
-  }
-}
-
-async function loadServerChats() {
-  if (!currentUser) {
-    alert("Спочатку увійди через Google");
-    return;
-  }
-  updateStatus("Завантаження...");
-  try {
-    const { data: chatsData, error: chatsError } = await sb
-      .from("chats")
-      .select("*")
-      .eq("user_id", currentUser.id)
-      .order("updated_at", { ascending: false });
-
-    if (chatsError) throw chatsError;
-    const ids = (chatsData || []).map(c => c.id);
-    let messagesData = [];
-
-    if (ids.length) {
-      const { data, error } = await sb
-        .from("messages")
-        .select("*")
-        .in("chat_id", ids)
-        .eq("user_id", currentUser.id)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      messagesData = data || [];
-    }
-
-    const grouped = new Map();
-    for (const m of messagesData) {
-      if (!grouped.has(m.chat_id)) grouped.set(m.chat_id, []);
-      grouped.get(m.chat_id).push(m);
-    }
-
-    state.chats = (chatsData || []).map(row =>
-      mapServerChat(row, grouped.get(row.id) || [])
-    );
-
-    if (!state.chats.length) {
-      createLocalChat("Новий чат");
-    } else {
-      state.activeChatId = state.chats[0].id;
-      saveState();
-      renderAll();
-    }
-    updateStatus("Історія завантажена");
-    closeMobileSidebar();
-  } catch (e) {
-    updateStatus("Помилка завантаження");
-    alert("Load error: " + (e.message || "невідома помилка"));
-  }
-}
-
-async function deleteChat(chatId) {
-  const item = state.chats.find(c => c.id === chatId);
-  if (!item) return;
-  if (!confirm("Видалити цей чат?")) return;
-  state.chats = state.chats.filter(c => c.id !== chatId);
-  if (state.activeChatId === chatId) {
-    state.activeChatId = state.chats[0]?.id || null;
-  }
-  saveState();
-  renderAll();
-
-  if (currentUser && item.serverId) {
-    await sb.from("chats").delete().eq("id", item.serverId).eq("user_id", currentUser.id);
-  }
-
-  if (!state.chats.length) {
-    createLocalChat("Новий чат");
-  }
-}
-
-googleLoginBtn?.addEventListener("click", signInWithGoogle);
-logoutBtn?.addEventListener("click", signOut);
-syncBtn?.addEventListener("click", syncActiveChat);
-newChatBtn?.addEventListener("click", () => createLocalChat("Новий чат"));
-
-clearBtn?.addEventListener("click", () => {
-  const active = ensureChat();
-  active.messages = [];
-  active.title = "Новий чат";
-  active.updatedAt = Date.now();
-  saveState();
-  renderAll();
-});
-
-exportJsonBtn?.addEventListener("click", exportJson);
-exportMdBtn?.addEventListener("click", exportMd);
-
-fastModeBtn?.addEventListener("click", () => {
-  state.mode = "fast";
-  saveState();
-  renderAll();
-});
-
-smartModeBtn?.addEventListener("click", () => {
-  state.mode = "smart";
-  saveState();
-  renderAll();
-});
-
-imageBtn?.addEventListener("click", () => imageInput?.click());
-
-imageInput?.addEventListener("change", async () => {
-  const file = imageInput.files?.[0];
-  if (!file) return;
-  try {
-    const dataUrl = await fileToDataUrl(file);
-    selectedImage = {
-      name: file.name,
-      type: file.type,
-      dataUrl
-    };
-    updateSelectedImageUI();
-  } catch (e) {
-    alert(e.message || "Помилка фото");
-  }
-});
-
-removeImageBtn?.addEventListener("click", clearSelectedImage);
-
-generateImageBtn?.addEventListener("click", () => {
-  const prompt = promptInput?.value.trim();
-  if (!prompt) {
-    alert("Спочатку введи опис для генерації зображення.");
-    return;
-  }
-  alert("Після чату підключимо і генерацію фото.");
-});
-
-stopBtn?.addEventListener("click", () => {
-  if (currentController) currentController.abort();
-});
-
-form?.addEventListener("submit", async (e) => {
+form?.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = promptInput?.value.trim();
-  if (!text || requestInFlight) return;
-  await sendChatMessage(text);
+  if (text) sendChatMessage(text);
 });
 
 promptInput?.addEventListener("input", autoResize);
@@ -836,29 +363,58 @@ promptInput?.addEventListener("keydown", (e) => {
   }
 });
 
+stopBtn?.addEventListener("click", () => currentController?.abort());
+
+clearBtn?.addEventListener("click", () => { 
+  const active = ensureChat(); 
+  active.messages = []; 
+  active.title = "Новий чат";
+  saveState(); 
+  renderAll(); 
+});
+
+newChatBtn?.addEventListener("click", () => createLocalChat("Новий чат"));
+
+fastModeBtn?.addEventListener("click", () => { state.mode = "fast"; saveState(); renderAll(); });
+smartModeBtn?.addEventListener("click", () => { state.mode = "smart"; saveState(); renderAll(); });
+
+imageBtn?.addEventListener("click", () => imageInput?.click());
+imageInput?.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    selectedImage = { name: file.name, type: file.type, dataUrl };
+    updateSelectedImageUI();
+  } catch (e) { alert("Помилка фото"); }
+});
+removeImageBtn?.addEventListener("click", clearSelectedImage);
+
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".chat-menu-wrap")) {
-    closeAllChatMenus();
-  }
+  if (!e.target.closest(".chat-menu-wrap")) closeAllChatMenus();
 });
 
 sb.auth.onAuthStateChange(async (_event, session) => {
   currentUser = session?.user || null;
   renderAuthState();
-  if (currentUser) {
-    await ensureProfile(currentUser);
-  }
 });
-
-if (quickActionsSection && quickActionsToggleIcon) {
-  quickActionsSection.classList.add("hidden");
-  quickActionsToggleIcon.textContent = "+";
-}
-
-window.loadServerChats = loadServerChats;
 
 renderAll();
 autoResize();
 updateSelectedImageUI();
-updateStatus("Старт...");
-initAuth();
+updateStatus("Готово");
+
+// Швидкий старт auth, щоб не блокувати UI
+sb.auth.getSession().then(({data}) => {
+  currentUser = data?.session?.user || null;
+  renderAuthState();
+}).catch(()=>{});
+
+googleLoginBtn?.addEventListener("click", async () => {
+  await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" }});
+});
+logoutBtn?.addEventListener("click", async () => {
+  await sb.auth.signOut();
+  currentUser = null;
+  renderAuthState();
+});
