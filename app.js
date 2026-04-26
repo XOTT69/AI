@@ -39,7 +39,7 @@ const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORAGE_KEY = "ai-chat-sync-v3";
+const STORAGE_KEY = "ai-chat-sync-v4";
 
 let currentUser = null;
 let selectedImage = null;
@@ -443,7 +443,14 @@ function trimMessages(messages, maxItems = 12) {
 }
 
 function getModePayload() {
+  let effectiveModel = modelSelect.value;
+
+  if (state.mode === "fast" && effectiveModel.includes("pro")) {
+    effectiveModel = "deepseek-ai/deepseek-v4-flash";
+  }
+
   return {
+    model: effectiveModel,
     responseMode: state.mode === "smart" ? "smart" : "fast"
   };
 }
@@ -483,7 +490,16 @@ async function* parseSSEStream(stream) {
         }
 
         try {
-          yield JSON.parse(data);
+          const parsed = JSON.parse(data);
+
+          if (parsed.choices?.[0]?.delta?.content) {
+            yield { type: "content", content: parsed.choices[0].delta.content };
+            continue;
+          }
+
+          if (parsed.type || parsed.content || parsed.message) {
+            yield parsed;
+          }
         } catch {}
       }
     }
@@ -522,6 +538,11 @@ async function sendChatMessage(text) {
 
   setBusy(true, "Генерація відповіді...");
 
+  const timeoutMs = modelSelect.value.includes("pro") ? 45000 : 20000;
+  const timeoutId = setTimeout(() => {
+    if (currentController) currentController.abort("timeout");
+  }, timeoutMs);
+
   try {
     currentController = new AbortController();
 
@@ -531,7 +552,7 @@ async function sendChatMessage(text) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: modelSelect.value,
+        ...getModePayload(),
         thinking: thinkingCheckbox.checked,
         messages: trimMessages(active.messages, 12),
         image: selectedImage?.dataUrl ? {
@@ -539,8 +560,7 @@ async function sendChatMessage(text) {
           name: selectedImage.name,
           type: selectedImage.type
         } : null,
-        stream: true,
-        ...getModePayload()
+        stream: true
       }),
       signal: currentController.signal
     });
@@ -553,9 +573,7 @@ async function sendChatMessage(text) {
     clearSelectedImage();
 
     for await (const event of parseSSEStream(response.body)) {
-      if (event.type === "__done__" || event.type === "done") {
-        continue;
-      }
+      if (event.type === "__done__" || event.type === "done") continue;
 
       if (event.type === "content") {
         contentText += event.content || "";
@@ -568,13 +586,22 @@ async function sendChatMessage(text) {
       }
     }
 
+    clearTimeout(timeoutId);
+
     bubble.wrap.classList.remove("typing");
     bubble.inner.innerHTML = renderMarkdown(contentText || "Порожня відповідь");
     await appendAssistantMessage(contentText || "Порожня відповідь");
   } catch (e) {
+    clearTimeout(timeoutId);
     console.error(e);
+
     bubble.wrap.classList.remove("typing");
-    bubble.inner.textContent = "Помилка: " + (e.message || "невідома помилка");
+
+    if (String(e?.name || "").includes("Abort") || String(e?.message || "").includes("timeout")) {
+      bubble.inner.textContent = "Модель відповідає занадто довго. Спробуй DeepSeek V4 Flash або вимкни складний режим.";
+    } else {
+      bubble.inner.textContent = "Помилка: " + (e.message || "невідома помилка");
+    }
   } finally {
     currentController = null;
     setBusy(false, "Готово");
@@ -845,7 +872,7 @@ generateImageBtn.addEventListener("click", async () => {
 });
 
 stopBtn.addEventListener("click", () => {
-  if (currentController) currentController.abort();
+  if (currentController) currentController.abort("manual");
 });
 
 form.addEventListener("submit", async (e) => {
