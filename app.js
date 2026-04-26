@@ -11,10 +11,21 @@ const chatTitle = document.getElementById("chatTitle");
 const sendBtn = document.getElementById("sendBtn");
 const fastModeBtn = document.getElementById("fastModeBtn");
 const smartModeBtn = document.getElementById("smartModeBtn");
+const imageBtn = document.getElementById("imageBtn");
+const imageInput = document.getElementById("imageInput");
+const generateImageBtn = document.getElementById("generateImageBtn");
+const selectedImageBar = document.getElementById("selectedImageBar");
+const selectedImageName = document.getElementById("selectedImageName");
+const selectedImageHint = document.getElementById("selectedImageHint");
+const selectedImagePreview = document.getElementById("selectedImagePreview");
+const removeImageBtn = document.getElementById("removeImageBtn");
+const exportJsonBtn = document.getElementById("exportJsonBtn");
+const exportMdBtn = document.getElementById("exportMdBtn");
+const statusText = document.getElementById("statusText");
 
 document.title = "AI Chat BY Антон";
 
-const STORAGE_KEY = "ai-chat-by-anton-v2";
+const STORAGE_KEY = "ai-chat-by-anton-v3";
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 
 if (!state || !Array.isArray(state.chats) || !state.chats.length) {
@@ -29,6 +40,7 @@ if (!state.mode) state.mode = "fast";
 
 let currentController = null;
 let requestInFlight = false;
+let selectedImage = null;
 
 marked.setOptions({
   breaks: true,
@@ -153,6 +165,10 @@ function enhanceCodeBlocks(container) {
   });
 }
 
+function updateStatus(text) {
+  statusText.textContent = text;
+}
+
 function renderChatList() {
   chatList.innerHTML = "";
 
@@ -196,57 +212,86 @@ function renderChatList() {
   }
 }
 
-function renderUserMessage(content) {
+function createMessageShell(role, extraClass = "") {
   const el = document.createElement("div");
-  el.className = "message user";
-  el.textContent = content;
+  el.className = `message ${role}${extraClass ? ` ${extraClass}` : ""}`;
+
+  const inner = document.createElement("div");
+  inner.className = "message-content";
+  el.appendChild(inner);
+
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
 }
 
-function renderAssistantMessage(content) {
-  const el = document.createElement("div");
-  el.className = "message assistant";
+function renderUserMessage(message) {
+  const el = createMessageShell("user");
+  const inner = el.querySelector(".message-content");
+  inner.textContent = message.content || "";
 
-  const inner = document.createElement("div");
-  inner.className = "message-content";
-  inner.innerHTML = renderMarkdown(content || "");
+  if (message.image?.dataUrl) {
+    const img = document.createElement("img");
+    img.src = message.image.dataUrl;
+    img.alt = "uploaded image";
+    img.className = "inline-preview-image";
+    inner.appendChild(img);
+  }
 
-  el.appendChild(inner);
-  chat.appendChild(el);
+  return el;
+}
+
+function renderAssistantMessage(message) {
+  const extraClass = message.kind === "image" ? "image-message" : "";
+  const el = createMessageShell("assistant", extraClass);
+  const inner = el.querySelector(".message-content");
+
+  inner.innerHTML = renderMarkdown(message.content || "");
+
+  if (message.kind === "image" && message.imageUrl) {
+    const wrap = document.createElement("div");
+    wrap.className = "generated-image-wrap";
+
+    const img = document.createElement("img");
+    img.src = message.imageUrl;
+    img.alt = "generated image";
+    img.className = "generated-image";
+
+    const actions = document.createElement("div");
+    actions.className = "generated-image-actions";
+
+    const openBtn = document.createElement("a");
+    openBtn.href = message.imageUrl;
+    openBtn.target = "_blank";
+    openBtn.rel = "noopener noreferrer";
+    openBtn.className = "ghost-btn small-btn";
+    openBtn.textContent = "Відкрити";
+
+    const downloadBtn = document.createElement("a");
+    downloadBtn.href = message.imageUrl;
+    downloadBtn.download = "generated-image.png";
+    downloadBtn.className = "primary-btn small-btn";
+    downloadBtn.textContent = "Завантажити";
+
+    actions.append(openBtn, downloadBtn);
+    wrap.append(img, actions);
+    inner.appendChild(wrap);
+  }
+
   enhanceCodeBlocks(el);
-  chat.scrollTop = chat.scrollHeight;
-
   return el;
 }
 
 function setAssistantStreamingText(el, labelText, contentText, typing = false) {
   el.className = `message assistant${typing ? " typing" : ""}`;
-
-  let inner = el.querySelector(".message-content");
-  if (!inner) {
-    inner = document.createElement("div");
-    inner.className = "message-content";
-    el.innerHTML = "";
-    el.appendChild(inner);
-  }
-
+  const inner = el.querySelector(".message-content");
   inner.textContent = `${labelText || ""}${contentText || ""}`;
   chat.scrollTop = chat.scrollHeight;
 }
 
 function finalizeAssistantMarkdown(el, labelText, contentText, typing = false) {
   el.className = `message assistant${typing ? " typing" : ""}`;
-
-  let inner = el.querySelector(".message-content");
-  if (!inner) {
-    inner = document.createElement("div");
-    inner.className = "message-content";
-    el.innerHTML = "";
-    el.appendChild(inner);
-  }
-
+  const inner = el.querySelector(".message-content");
   const merged = `${labelText || ""}${contentText || ""}`;
   inner.innerHTML = renderMarkdown(merged);
   enhanceCodeBlocks(el);
@@ -261,18 +306,20 @@ function renderMessages() {
   if (!active.messages.length) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
-    empty.textContent = "AI Chat BY Антон готовий. Режим “Швидко” дає коротші відповіді, “Розумно” — сильніші.";
+    empty.textContent = "AI Chat BY Антон готовий. Додано фото, генерацію зображень, експорт і кращий стрімінг.";
     chat.appendChild(empty);
     return;
   }
 
   for (const msg of active.messages) {
     if (msg.role === "assistant") {
-      renderAssistantMessage(msg.content);
+      renderAssistantMessage(msg);
     } else {
-      renderUserMessage(msg.content);
+      renderUserMessage(msg);
     }
   }
+
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function renderAll() {
@@ -283,7 +330,7 @@ function renderAll() {
 
 function autoResize() {
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 240) + "px";
 }
 
 function trimMessages(messages, maxItems = 12) {
@@ -292,21 +339,20 @@ function trimMessages(messages, maxItems = 12) {
 
 function getModelTimeout(model) {
   if (model === "deepseek-ai/deepseek-v4-flash") return 90000;
-  if (model === "mistralai/devstral-2-123b-instruct-2512") return 120000;
-  if (model === "bytedance/seed-oss-36b-instruct") return 140000;
-  if (model === "z-ai/glm4-7") return 140000;
   if (model === "z-ai/glm5.1") return 180000;
-  if (model === "mistralai/mistral-large-3-675b-instruct-2512") return 180000;
+  if (model === "meta/llama-3.2-11b-vision-instruct") return 180000;
   if (model === "deepseek-ai/deepseek-v4-pro") return 180000;
-  if (model === "deepseek-ai/deepseek-v3-2") return 180000;
   return 120000;
 }
 
-function setBusy(isBusy) {
+function setBusy(isBusy, status = "Готово") {
   requestInFlight = isBusy;
   sendBtn.disabled = isBusy;
   stopBtn.disabled = !isBusy;
+  generateImageBtn.disabled = isBusy;
+  imageBtn.disabled = isBusy;
   sendBtn.textContent = isBusy ? "Генерується..." : "Надіслати";
+  updateStatus(status);
 }
 
 function applyModeButtons() {
@@ -319,6 +365,36 @@ function getModePayload() {
   return {
     responseMode: state.mode === "smart" ? "smart" : "fast"
   };
+}
+
+function updateSelectedImageUI() {
+  if (!selectedImage?.dataUrl) {
+    selectedImageBar.classList.add("hidden");
+    selectedImageName.textContent = "Фото не вибрано";
+    selectedImageHint.textContent = "Фото буде відправлено разом із наступним повідомленням.";
+    selectedImagePreview.removeAttribute("src");
+    return;
+  }
+
+  selectedImageBar.classList.remove("hidden");
+  selectedImageName.textContent = selectedImage.name || "selected-image";
+  selectedImageHint.textContent = "Фото буде проаналізовано або враховано в наступному повідомленні.";
+  selectedImagePreview.src = selectedImage.dataUrl;
+}
+
+function clearSelectedImage() {
+  selectedImage = null;
+  imageInput.value = "";
+  updateSelectedImageUI();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function* parseSSEStream(stream) {
@@ -337,12 +413,14 @@ async function* parseSSEStream(stream) {
 
       for (const event of events) {
         const lines = event.split("\n");
-        let dataLines = [];
+        const dataLines = [];
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          dataLines.push(trimmed.slice(5).trim());
+          if (!trimmed || trimmed.startsWith(":")) continue;
+          if (trimmed.startsWith("data:")) {
+            dataLines.push(trimmed.slice(5).trim());
+          }
         }
 
         const data = dataLines.join("");
@@ -354,6 +432,19 @@ async function* parseSSEStream(stream) {
         }
 
         try {
+          const parsed = JSON.parse(data);
+          yield parsed;
+        } catch {}
+      }
+    }
+
+    const tail = buffer.trim();
+    if (tail.startsWith("data:")) {
+      const data = tail.slice(5).trim();
+      if (data === "[DONE]") {
+        yield { type: "__done__" };
+      } else {
+        try {
           yield JSON.parse(data);
         } catch {}
       }
@@ -363,55 +454,76 @@ async function* parseSSEStream(stream) {
   }
 }
 
-fastModeBtn.addEventListener("click", () => {
-  state.mode = "fast";
-  saveState();
-  applyModeButtons();
-});
+function downloadFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
-smartModeBtn.addEventListener("click", () => {
-  state.mode = "smart";
-  saveState();
-  applyModeButtons();
-});
-
-newChatBtn.addEventListener("click", () => {
-  if (requestInFlight) return;
-  createChat("Новий чат");
-});
-
-clearBtn.addEventListener("click", () => {
-  if (requestInFlight) return;
+function exportActiveChatJson() {
   const active = ensureChat();
-  active.messages = [];
-  active.title = "Новий чат";
+  downloadFile(
+    `${active.title || "chat"}.json`,
+    JSON.stringify(active, null, 2),
+    "application/json"
+  );
+}
+
+function exportActiveChatMd() {
+  const active = ensureChat();
+  const lines = [`# ${active.title || "Новий чат"}`, ""];
+  for (const msg of active.messages) {
+    lines.push(`## ${msg.role === "user" ? "Користувач" : "Асистент"}`);
+    lines.push("");
+    lines.push(msg.content || "");
+    lines.push("");
+    if (msg.image?.dataUrl) {
+      lines.push("_Повідомлення містить прикріплене фото._");
+      lines.push("");
+    }
+    if (msg.kind === "image" && msg.imageUrl) {
+      lines.push(`![generated image](${msg.imageUrl})`);
+      lines.push("");
+    }
+  }
+
+  downloadFile(
+    `${active.title || "chat"}.md`,
+    lines.join("\n"),
+    "text/markdown;charset=utf-8"
+  );
+}
+
+function appendAssistantMessageToState(content, extra = {}) {
+  const active = ensureChat();
+  active.messages.push({
+    role: "assistant",
+    content,
+    ...extra
+  });
   active.updatedAt = Date.now();
   saveState();
   renderAll();
-});
+}
 
-stopBtn.addEventListener("click", () => {
-  if (currentController) currentController.abort();
-});
-
-promptInput.addEventListener("input", autoResize);
-
-promptInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    form.requestSubmit();
-  }
-});
-
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (requestInFlight) return;
-
-  const text = promptInput.value.trim();
-  if (!text) return;
-
+async function sendChatMessage(text) {
   const active = ensureChat();
-  const userMessage = { role: "user", content: text };
+  const userMessage = {
+    role: "user",
+    content: text
+  };
+
+  if (selectedImage?.dataUrl) {
+    userMessage.image = {
+      name: selectedImage.name,
+      type: selectedImage.type,
+      dataUrl: selectedImage.dataUrl
+    };
+  }
 
   active.messages.push(userMessage);
   updateChatTitle(active);
@@ -422,18 +534,11 @@ form.addEventListener("submit", async (e) => {
   promptInput.value = "";
   autoResize();
 
-  const assistantEl = document.createElement("div");
-  assistantEl.className = "message assistant typing";
+  const assistantEl = createMessageShell("assistant");
+  assistantEl.classList.add("typing");
+  assistantEl.querySelector(".message-content").textContent = "Думаю...";
 
-  const inner = document.createElement("div");
-  inner.className = "message-content";
-  inner.textContent = "Думаю...";
-  assistantEl.appendChild(inner);
-
-  chat.appendChild(assistantEl);
-  chat.scrollTop = chat.scrollHeight;
-
-  setBusy(true);
+  setBusy(true, "Генерується відповідь");
 
   let timeoutId = null;
   let contentText = "";
@@ -457,6 +562,11 @@ form.addEventListener("submit", async (e) => {
         thinking: thinkingCheckbox.checked,
         messages: trimMessages(active.messages, 12),
         stream: true,
+        image: selectedImage?.dataUrl ? {
+          dataUrl: selectedImage.dataUrl,
+          name: selectedImage.name,
+          type: selectedImage.type
+        } : null,
         ...getModePayload()
       }),
       signal: currentController.signal
@@ -509,12 +619,8 @@ form.addEventListener("submit", async (e) => {
     }
 
     finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-
-    const stored = `${labelText}${contentText}`;
-    active.messages.push({ role: "assistant", content: stored });
-    active.updatedAt = Date.now();
-    saveState();
-    renderAll();
+    appendAssistantMessageToState(`${labelText}${contentText}`);
+    clearSelectedImage();
   } catch (error) {
     assistantEl.classList.remove("typing");
     const msg = String(error?.message || "").toLowerCase();
@@ -523,27 +629,18 @@ form.addEventListener("submit", async (e) => {
       if (contentText.trim()) {
         contentText += "\n\n_Зупинено._";
         finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-
-        const stored = `${labelText}${contentText}`;
-        active.messages.push({ role: "assistant", content: stored });
-        active.updatedAt = Date.now();
-        saveState();
-        renderAll();
+        appendAssistantMessageToState(`${labelText}${contentText}`);
       } else {
         assistantEl.querySelector(".message-content").textContent = "Зупинено.";
       }
-    } else if (msg.includes("terminated")) {
+    } else if (msg.includes("terminated") || msg.includes("stream")) {
       if (contentText.trim()) {
         contentText += "\n\n_Потік обірвався. Напиши: `продовжуй`._";
         finalizeAssistantMarkdown(assistantEl, labelText, contentText, false);
-
-        const stored = `${labelText}${contentText}`;
-        active.messages.push({ role: "assistant", content: stored });
-        active.updatedAt = Date.now();
-        saveState();
-        renderAll();
+        appendAssistantMessageToState(`${labelText}${contentText}`);
       } else {
-        assistantEl.querySelector(".message-content").textContent = "Потік відповіді обірвався. Спробуй ще раз.";
+        assistantEl.querySelector(".message-content").textContent =
+          "Потік відповіді обірвався. Спробуй ще раз.";
       }
     } else {
       assistantEl.querySelector(".message-content").textContent =
@@ -551,11 +648,200 @@ form.addEventListener("submit", async (e) => {
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
-    setBusy(false);
+    setBusy(false, "Готово");
     currentController = null;
   }
+}
+
+async function generateImageFromPrompt(prompt) {
+  const active = ensureChat();
+
+  const userMessage = {
+    role: "user",
+    content: `[ГЕНЕРАЦІЯ ЗОБРАЖЕННЯ]\n${prompt}`
+  };
+
+  active.messages.push(userMessage);
+  updateChatTitle(active);
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+
+  promptInput.value = "";
+  autoResize();
+
+  const assistantEl = createMessageShell("assistant", "image-message");
+  assistantEl.classList.add("typing");
+  assistantEl.querySelector(".message-content").textContent = "Генерую зображення...";
+
+  setBusy(true, "Генерується зображення");
+
+  try {
+    currentController = new AbortController();
+
+    const response = await fetch("/api/image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ prompt }),
+      signal: currentController.signal
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.details || data?.error || `HTTP ${response.status}`);
+    }
+
+    const imageUrl = data?.url;
+    if (!imageUrl) {
+      throw new Error("Сервер не повернув URL зображення");
+    }
+
+    assistantEl.classList.remove("typing");
+    assistantEl.querySelector(".message-content").innerHTML = renderMarkdown("Ось згенероване зображення:");
+
+    const wrap = document.createElement("div");
+    wrap.className = "generated-image-wrap";
+
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = "generated image";
+    img.className = "generated-image";
+
+    const actions = document.createElement("div");
+    actions.className = "generated-image-actions";
+
+    const openBtn = document.createElement("a");
+    openBtn.href = imageUrl;
+    openBtn.target = "_blank";
+    openBtn.rel = "noopener noreferrer";
+    openBtn.className = "ghost-btn small-btn";
+    openBtn.textContent = "Відкрити";
+
+    const downloadBtn = document.createElement("a");
+    downloadBtn.href = imageUrl;
+    downloadBtn.download = "generated-image.png";
+    downloadBtn.className = "primary-btn small-btn";
+    downloadBtn.textContent = "Завантажити";
+
+    actions.append(openBtn, downloadBtn);
+    wrap.append(img, actions);
+    assistantEl.querySelector(".message-content").appendChild(wrap);
+
+    appendAssistantMessageToState("Ось згенероване зображення:", {
+      kind: "image",
+      imageUrl
+    });
+  } catch (error) {
+    assistantEl.classList.remove("typing");
+    assistantEl.querySelector(".message-content").textContent =
+      "Помилка генерації зображення: " + (error.message || "невідома помилка");
+  } finally {
+    setBusy(false, "Готово");
+    currentController = null;
+  }
+}
+
+fastModeBtn.addEventListener("click", () => {
+  state.mode = "fast";
+  saveState();
+  applyModeButtons();
+});
+
+smartModeBtn.addEventListener("click", () => {
+  state.mode = "smart";
+  saveState();
+  applyModeButtons();
+});
+
+newChatBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  clearSelectedImage();
+  createChat("Новий чат");
+});
+
+clearBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  const active = ensureChat();
+  active.messages = [];
+  active.title = "Новий чат";
+  active.updatedAt = Date.now();
+  saveState();
+  renderAll();
+});
+
+stopBtn.addEventListener("click", () => {
+  if (currentController) currentController.abort();
+});
+
+imageBtn.addEventListener("click", () => {
+  if (requestInFlight) return;
+  imageInput.click();
+});
+
+imageInput.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) return;
+
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    selectedImage = {
+      name: file.name,
+      type: file.type,
+      dataUrl
+    };
+
+    if (modelSelect.value !== "meta/llama-3.2-11b-vision-instruct") {
+      modelSelect.value = "meta/llama-3.2-11b-vision-instruct";
+    }
+
+    updateSelectedImageUI();
+  } catch (error) {
+    alert(error.message || "Не вдалося прочитати фото");
+    clearSelectedImage();
+  }
+});
+
+removeImageBtn.addEventListener("click", clearSelectedImage);
+
+generateImageBtn.addEventListener("click", async () => {
+  if (requestInFlight) return;
+
+  const prompt = promptInput.value.trim();
+  if (!prompt) {
+    alert("Спочатку введи опис для генерації зображення.");
+    return;
+  }
+
+  await generateImageFromPrompt(prompt);
+});
+
+exportJsonBtn.addEventListener("click", exportActiveChatJson);
+exportMdBtn.addEventListener("click", exportActiveChatMd);
+
+promptInput.addEventListener("input", autoResize);
+
+promptInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (requestInFlight) return;
+
+  const text = promptInput.value.trim();
+  if (!text) return;
+
+  await sendChatMessage(text);
 });
 
 ensureChat();
 renderAll();
 autoResize();
+updateSelectedImageUI();
+updateStatus("Готово");
