@@ -26,13 +26,11 @@ const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
 
-// Мобільне меню
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
 const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
-// Ключі Supabase
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
@@ -69,7 +67,7 @@ if (supaUrl && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v25";
+const STORAGE_KEY = "ai-chat-sync-v26";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -87,7 +85,6 @@ function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 function updateStatus(text) { if (statusText) statusText.textContent = text; }
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
-// --- МОБІЛЬНЕ МЕНЮ ---
 function openSidebar() {
   sidebar.classList.add("open");
   mobileOverlay.classList.add("show");
@@ -105,7 +102,6 @@ hamburgerBtn?.addEventListener("click", openSidebar);
 closeSidebarBtn?.addEventListener("click", closeSidebar);
 mobileOverlay?.addEventListener("click", closeSidebar);
 
-// --- ЛОГІКА ЧАТУ ---
 function ensureChat() {
   let active = getActiveChat();
   if (!active) {
@@ -134,12 +130,17 @@ function renderAuthState() {
   if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/40x40/png";
 }
 
+// ДОДАНО КНОПКУ ВИДАЛЕННЯ ЧАТУ
 function renderChatList() {
   if (!chatList) return;
   chatList.innerHTML = "";
   for (const item of state.chats) {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
+    
+    // Блок з текстом
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "chat-item-info";
     
     const title = document.createElement("div");
     title.className = "chat-item-title";
@@ -149,7 +150,30 @@ function renderChatList() {
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
     
-    div.append(title, meta);
+    infoDiv.append(title, meta);
+    
+    // Кнопка видалення
+    const delBtn = document.createElement("button");
+    delBtn.className = "chat-item-delete";
+    delBtn.innerHTML = "✕";
+    delBtn.title = "Видалити чат";
+    
+    delBtn.onclick = (e) => {
+      e.stopPropagation(); // Щоб клік не відкривав чат
+      if (confirm("Ви дійсно хочете видалити цей чат?")) {
+        state.chats = state.chats.filter(c => c.id !== item.id);
+        // Якщо видалили активний чат, перемикаємось на перший в списку
+        if (state.activeChatId === item.id) {
+          state.activeChatId = state.chats.length > 0 ? state.chats[0].id : null;
+        }
+        saveState();
+        renderAll();
+      }
+    };
+    
+    div.append(infoDiv, delBtn);
+    
+    // Відкриття чату по кліку на сам блок
     div.onclick = () => {
       if (requestInFlight) return;
       state.activeChatId = item.id;
@@ -157,6 +181,7 @@ function renderChatList() {
       renderAll();
       if (window.innerWidth <= 768) closeSidebar();
     };
+    
     chatList.appendChild(div);
   }
 }
@@ -254,7 +279,7 @@ function fileToDataUrl(file) {
 function setBusy(isBusy, status = "Готово") {
   requestInFlight = isBusy;
   updateStatus(status);
-  renderAll(); // On/off stop button
+  renderAll(); 
 }
 
 async function sendChatMessage(text) {
@@ -366,7 +391,6 @@ async function sendChatMessage(text) {
   }
 }
 
-// --- ІВЕНТИ ---
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = promptInput?.value.trim();
@@ -385,11 +409,12 @@ stopBtn?.addEventListener("click", () => currentController?.abort());
 
 clearBtn?.addEventListener("click", () => {
   const active = ensureChat();
-  active.messages = [];
-  active.title = "Новий чат";
-  saveState();
-  renderAll();
-  if (window.innerWidth <= 768) closeSidebar();
+  if (confirm("Очистити історію поточного чату?")) {
+    active.messages = [];
+    active.title = "Новий чат";
+    saveState();
+    renderAll();
+  }
 });
 
 newChatBtn?.addEventListener("click", () => {
@@ -414,7 +439,6 @@ imageInput?.addEventListener("change", async () => {
 });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-// --- АВТОРИЗАЦІЯ ---
 sb.auth.onAuthStateChange?.((_event, session) => {
   currentUser = session?.user || null;
   renderAuthState();
@@ -437,7 +461,6 @@ logoutBtn?.addEventListener("click", async () => {
   renderAuthState();
 });
 
-// --- СТАРТ ---
 renderAll();
 autoResize();
 updateSelectedImageUI();
