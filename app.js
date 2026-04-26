@@ -3,6 +3,12 @@ const form = document.getElementById("chatForm");
 const promptInput = document.getElementById("prompt");
 const sendBtn = document.getElementById("sendBtn");
 const googleLoginBtn = document.getElementById("googleLoginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const authLoggedOut = document.getElementById("authLoggedOut");
+const authLoggedIn = document.getElementById("authLoggedIn");
+const userAvatar = document.getElementById("userAvatar");
+const userName = document.getElementById("userName");
+const userEmail = document.getElementById("userEmail");
 const newChatBtn = document.getElementById("newChatBtn");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
@@ -14,8 +20,14 @@ const selectedImageName = document.getElementById("selectedImageName");
 const selectedImageHint = document.getElementById("selectedImageHint");
 const selectedImagePreview = document.getElementById("selectedImagePreview");
 const statusText = document.getElementById("statusText");
+const syncBtn = document.getElementById("syncBtn");
+
+const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let selectedImage = null;
+let currentUser = null;
 
 function updateStatus(text) {
   if (statusText) statusText.textContent = text;
@@ -34,6 +46,22 @@ function updateSelectedImageUI() {
   selectedImageName.textContent = selectedImage.name || "selected-image";
   selectedImageHint.textContent = "Фото прикріплене.";
   selectedImagePreview.src = selectedImage.dataUrl;
+}
+
+function renderAuthState() {
+  if (!currentUser) {
+    authLoggedOut.classList.remove("hidden");
+    authLoggedIn.classList.add("hidden");
+    return;
+  }
+
+  authLoggedOut.classList.add("hidden");
+  authLoggedIn.classList.remove("hidden");
+
+  const meta = currentUser.user_metadata || {};
+  userName.textContent = meta.full_name || meta.name || "Користувач";
+  userEmail.textContent = currentUser.email || "Без email";
+  userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
 }
 
 function fileToDataUrl(file) {
@@ -68,7 +96,9 @@ function addMessage(text) {
 
   const replyInner = document.createElement("div");
   replyInner.className = "message-content";
-  replyInner.textContent = "Повідомлення додано. Базовий JS вже працює.";
+  replyInner.textContent = currentUser
+    ? "Ти увійшов. Локальний чат працює, Google auth теж підключений."
+    : "Локальний чат працює. Тепер протестуй реальний Google login.";
 
   reply.appendChild(replyInner);
   chat.appendChild(reply);
@@ -76,12 +106,73 @@ function addMessage(text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+async function initAuth() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) {
+      console.error(error);
+      updateStatus("Помилка сесії");
+      return;
+    }
+
+    currentUser = data?.session?.user || null;
+    renderAuthState();
+    updateStatus("Готово");
+  } catch (e) {
+    console.error(e);
+    updateStatus("Auth init error");
+  }
+}
+
+async function signInWithGoogle() {
+  try {
+    updateStatus("Перехід у Google...");
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin + "/"
+      }
+    });
+
+    if (error) {
+      console.error(error);
+      alert("Google login error: " + (error.message || "невідома помилка"));
+      updateStatus("Помилка логіну");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Google login crash: " + (e.message || "невідома помилка"));
+    updateStatus("Помилка логіну");
+  }
+}
+
+async function signOut() {
+  try {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      console.error(error);
+      alert("Logout error: " + (error.message || "невідома помилка"));
+      return;
+    }
+
+    currentUser = null;
+    renderAuthState();
+    updateStatus("Вийшов");
+  } catch (e) {
+    console.error(e);
+    alert("Logout crash: " + (e.message || "невідома помилка"));
+  }
+}
+
+googleLoginBtn.addEventListener("click", signInWithGoogle);
+
+logoutBtn.addEventListener("click", signOut);
+
 newChatBtn.addEventListener("click", () => {
   alert("Новий чат працює");
-});
-
-googleLoginBtn.addEventListener("click", () => {
-  alert("Google button працює");
 });
 
 exportJsonBtn.addEventListener("click", () => {
@@ -90,6 +181,10 @@ exportJsonBtn.addEventListener("click", () => {
 
 exportMdBtn.addEventListener("click", () => {
   alert("Експорт MD працює");
+});
+
+syncBtn.addEventListener("click", () => {
+  alert("Sync підключимо наступним кроком");
 });
 
 imageBtn.addEventListener("click", () => {
@@ -130,5 +225,11 @@ form.addEventListener("submit", (e) => {
   updateSelectedImageUI();
 });
 
+supabase.auth.onAuthStateChange((_event, session) => {
+  currentUser = session?.user || null;
+  renderAuthState();
+});
+
 updateSelectedImageUI();
-updateStatus("Базовий режим");
+updateStatus("Старт...");
+initAuth();
