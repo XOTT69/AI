@@ -8,18 +8,40 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <!-- Залишаємо темну тему для блоків з кодом, це завжди виглядає стильно -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   
   <style>
+    /* ТЕМНА ТЕМА (За замовчуванням) */
     :root {
       --bg: #0b1220;
       --panel: #111827;
       --panel-2: #1f2937;
+      --sidebar: #0f172a;
+      --topbar: rgba(11,18,32,0.9);
       --text: #e5e7eb;
       --muted: #94a3b8;
       --accent: #3b82f6;
-      --accent-2: #2563eb;
-      --danger: #ef4444;
-      --border: rgba(255,255,255,.08);
+      --danger-bg: rgba(239,68,68,0.2);
+      --danger-text: #fca5a5;
+      --border: rgba(255,255,255,0.08);
+      --hover: rgba(255,255,255,0.05);
+    }
+
+    /* СВІТЛА ТЕМА */
+    [data-theme="light"] {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-2: #f1f5f9;
+      --sidebar: #f8fafc;
+      --topbar: rgba(255,255,255,0.9);
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger-bg: rgba(239,68,68,0.1);
+      --danger-text: #dc2626;
+      --border: rgba(0,0,0,0.1);
+      --hover: rgba(0,0,0,0.05);
     }
 
     * { box-sizing: border-box; }
@@ -32,6 +54,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       height: 100dvh;
       overflow: hidden;
+      transition: background 0.3s, color 0.3s; /* Плавний перехід теми */
     }
 
     .app-container {
@@ -43,12 +66,12 @@
     /* БОКОВА ПАНЕЛЬ (SIDEBAR) */
     .sidebar {
       width: 280px;
-      background: #0f172a;
+      background: var(--sidebar);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
       z-index: 100;
       padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -62,14 +85,13 @@
       align-items: center;
     }
 
-    /* НАЛАШТУВАННЯ У МЕНЮ (Вибір ШІ) */
+    /* НАЛАШТУВАННЯ У МЕНЮ */
     .sidebar-settings {
       padding: 12px;
       display: flex;
       flex-direction: column;
       gap: 10px;
       border-bottom: 1px solid var(--border);
-      background: rgba(255,255,255,0.01);
     }
 
     .control-btn {
@@ -142,7 +164,7 @@
       transition: background 0.2s;
     }
 
-    .chat-item:hover { background: rgba(255,255,255,.05); }
+    .chat-item:hover { background: var(--hover); }
     .chat-item.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.5); }
 
     .chat-item-info { flex: 1; overflow: hidden; }
@@ -166,11 +188,11 @@
       cursor: pointer;
       padding: 8px;
       border-radius: 6px;
-      display: none; /* Ховаємо на ПК поки немає ховеру */
+      display: none; 
     }
     
-    .chat-item:hover .chat-item-delete { display: block; color: #fca5a5; }
-    .chat-item-delete:hover { background: rgba(239,68,68,.2); }
+    .chat-item:hover .chat-item-delete { display: block; color: var(--danger-text); }
+    .chat-item-delete:hover { background: var(--danger-bg); }
 
     .sidebar-footer { padding: 16px; border-top: 1px solid var(--border); }
     .user-info { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -187,10 +209,11 @@
     /* ВЕРХНЯ ПАНЕЛЬ (TOPBAR) */
     .topbar {
       padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px;
-      background: rgba(11,18,32,.9);
+      background: var(--topbar);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
       display: flex; align-items: center; gap: 12px; z-index: 10; flex-shrink: 0;
+      transition: background 0.3s;
     }
 
     .hamburger-btn {
@@ -228,6 +251,7 @@
     .input-area {
       padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border);
       flex-shrink: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      transition: background 0.3s;
     }
 
     .selected-image-bar {
@@ -266,8 +290,10 @@
       background: var(--panel-2); color: var(--text); border: none; padding: 10px 16px;
       border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%;
     }
-    .btn.primary { background: var(--accent); }
-    .btn.danger { background: rgba(239,68,68,.2); color: #fca5a5; }
+    .btn.primary { background: var(--accent); color: white; }
+    
+    /* Змінні для червоного тексту */
+    .text-danger { color: var(--danger-text) !important; }
 
     .hidden { display: none !important; }
 
@@ -286,7 +312,7 @@
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
       .message-content { max-width: 92%; }
-      .chat-item-delete { display: block; } /* На телефоні завжди показувати хрестик */
+      .chat-item-delete { display: block; } 
     }
   </style>
 </head>
@@ -302,9 +328,12 @@
         <button type="button" class="btn-icon" id="closeSidebarBtn" style="display: none;">✕</button>
       </div>
 
-      <!-- НАЛАШТУВАННЯ ТЕПЕР ТУТ (Доступно і на ПК, і на телефоні) -->
+      <!-- НАЛАШТУВАННЯ + ПЕРЕМИКАЧ ТЕМИ -->
       <div class="sidebar-settings">
-        <button type="button" class="btn primary" id="newChatBtn" style="margin-bottom: 4px;">Новий чат</button>
+        <div style="display: flex; gap: 8px; margin-bottom: 4px;">
+          <button type="button" class="btn primary" id="newChatBtn" style="margin: 0; flex: 1;">Новий чат</button>
+          <button type="button" class="btn" id="themeToggleBtn" style="margin: 0; width: 44px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px;" title="Змінити тему">☀️</button>
+        </div>
         
         <select id="model" class="control-btn">
           <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B — Універсальна</option>
@@ -340,7 +369,7 @@
               <div id="userEmail" class="user-email">email@example.com</div>
             </div>
           </div>
-          <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
+          <button type="button" class="btn" style="background: var(--danger-bg); color: var(--danger-text);" id="logoutBtn">Вийти</button>
         </div>
       </div>
     </aside>
@@ -355,7 +384,7 @@
           <span class="status-indicator" id="statusText">Готово</span>
         </div>
         
-        <button type="button" class="control-btn" id="clearBtn" style="color: #fca5a5; width: auto;">Очистити чат</button>
+        <button type="button" class="control-btn text-danger" id="clearBtn" style="width: auto;">Очистити чат</button>
       </header>
 
       <div class="chat-container" id="chat">
@@ -369,14 +398,14 @@
             <span id="selectedImageName">image.jpg</span>
             <small>Фото прикріплене</small>
           </div>
-          <button type="button" class="btn-icon" id="removeImageBtn" style="color: #fca5a5;">✕</button>
+          <button type="button" class="btn-icon text-danger" id="removeImageBtn">✕</button>
         </div>
 
         <form id="chatForm" class="input-form">
           <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp" class="hidden">
           <button type="button" class="btn-icon" id="imageBtn">🖼️</button>
           <textarea id="prompt" placeholder="Повідомлення..." rows="1"></textarea>
-          <button type="button" class="btn-icon hidden" id="stopBtn" style="color: #fca5a5;">⏹</button>
+          <button type="button" class="btn-icon hidden text-danger" id="stopBtn">⏹</button>
           <button type="submit" class="send-btn" id="sendBtn">➤</button>
         </form>
       </div>
