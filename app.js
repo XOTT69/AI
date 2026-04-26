@@ -31,26 +31,10 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
+
+// Підключення Supabase за допомогою твоїх ключів
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
-
-// Vercel автоматично підставляє значення NEXT_PUBLIC_ змінних, якщо проєкт збирається через Next.js/Vite.
-// Якщо це звичайний статичний HTML деплой на Vercel, то змінні не інжектуються у .js файли напряму.
-// Тому ми залишаємо fallback на об'єкт window (якщо ти колись повернешся до конфігу).
-// Але оскільки ти все додав у Vercel, ми спробуємо зчитати їх:
-let supaUrl = "";
-let supaKey = "";
-
-// Якщо ти використовуєш Next.js або Vite (збірка Vercel), вони будуть доступні тут:
-if (typeof process !== "undefined" && process.env) {
-  supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-  supaKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-}
-
-// Fallback, якщо Vercel не зміг інжектувати змінні в статичний файл (що часто буває у Vanilla JS)
-if (!supaUrl || !supaKey) {
-  console.warn("⚠️ Ключі Supabase не знайдені в ENV. Supabase не підключено.");
-}
 
 let sb = null;
 
@@ -386,7 +370,11 @@ clearBtn?.addEventListener("click", () => {
   renderAll(); 
 });
 
-newChatBtn?.addEventListener("click", () => createLocalChat("Новий чат"));
+newChatBtn?.addEventListener("click", () => {
+  state.activeChatId = null;
+  ensureChat();
+  renderAll();
+});
 
 fastModeBtn?.addEventListener("click", () => { state.mode = "fast"; saveState(); renderAll(); });
 smartModeBtn?.addEventListener("click", () => { state.mode = "smart"; saveState(); renderAll(); });
