@@ -32,9 +32,24 @@ const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 
-// Безпечно беремо ключі Supabase (Vercel автоматично інжектує NEXT_PUBLIC_ під час збірки)
-let supaUrl = ""; // Встав сюди свій URL бази даних Supabase
-let supaKey = ""; // Встав сюди свій ANON ключ бази даних Supabase
+// Vercel автоматично підставляє значення NEXT_PUBLIC_ змінних, якщо проєкт збирається через Next.js/Vite.
+// Якщо це звичайний статичний HTML деплой на Vercel, то змінні не інжектуються у .js файли напряму.
+// Тому ми залишаємо fallback на об'єкт window (якщо ти колись повернешся до конфігу).
+// Але оскільки ти все додав у Vercel, ми спробуємо зчитати їх:
+let supaUrl = "";
+let supaKey = "";
+
+// Якщо ти використовуєш Next.js або Vite (збірка Vercel), вони будуть доступні тут:
+if (typeof process !== "undefined" && process.env) {
+  supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  supaKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+}
+
+// Fallback, якщо Vercel не зміг інжектувати змінні в статичний файл (що часто буває у Vanilla JS)
+if (!supaUrl || !supaKey) {
+  console.warn("⚠️ Ключі Supabase не знайдені в ENV. Supabase не підключено.");
+}
+
 let sb = null;
 
 if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
@@ -43,7 +58,7 @@ if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   sb = {
     auth: {
       getSession: async () => ({ data: { session: null }, error: null }),
-      signInWithOAuth: async () => ({ error: new Error("Missing config") }),
+      signInWithOAuth: async () => { alert("Supabase не налаштовано"); return { error: new Error("Missing config") }; },
       signOut: async () => ({ error: null }),
       onAuthStateChange: () => {}
     },
