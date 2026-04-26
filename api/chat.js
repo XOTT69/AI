@@ -20,8 +20,8 @@ const ALLOWED_MODELS = {
   "meta/llama-3.2-11b-vision-instruct": {
     label: "Llama 3.2 Vision — Фото й OCR",
     system: "Ти мультимодальний AI-помічник. Аналізуй фото, скріни, документи, інтерфейси та текст на зображеннях. Відповідай українською, чітко і докладно.",
-    fast: { maxTokens: 1400, temperature: 0.2 },
-    smart: { maxTokens: 2600, temperature: 0.35 }
+    fast: { maxTokens: 1600, temperature: 0.2 },
+    smart: { maxTokens: 2800, temperature: 0.35 }
   }
 };
 
@@ -31,6 +31,54 @@ function trimMessages(messages, maxItems = 12) {
 
 function sendSSE(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image) {
+  if (image?.dataUrl && selectedModel === "meta/llama-3.2-11b-vision-instruct") {
+    const lastUserText =
+      recentMessages.filter(m => m.role === "user").slice(-1)[0]?.content ||
+      "Опиши, що на цьому фото.";
+
+    const assistantHistory = recentMessages
+      .filter(m => m.role === "assistant" && typeof m.content === "string")
+      .slice(-4)
+      .map(m => ({
+        role: "assistant",
+        content: m.content
+      }));
+
+    return [
+      { role: "system", content: modelConfig.system },
+      ...assistantHistory,
+      {
+        role: "user",
+        content: [
+          { type: "text", text: lastUserText },
+          {
+            type: "image_url",
+            image_url: { url: image.dataUrl }
+          }
+        ]
+      }
+    ];
+  }
+
+  return [
+    {
+      role: "system",
+      content: modelConfig.system
+    },
+    ...recentMessages
+      .filter((m) =>
+        m &&
+        typeof m.content === "string" &&
+        ["user", "assistant", "system"].includes(m.role)
+      )
+      .map((m) => ({
+        role: m.role,
+        content: m.content
+      }))
+  ];
 }
 
 export default async function handler(req, res) {
@@ -62,49 +110,12 @@ export default async function handler(req, res) {
     const recentMessages = trimMessages(messages, 12);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
 
-    let safeMessages = [];
-
-    if (image?.dataUrl && selectedModel === "meta/llama-3.2-11b-vision-instruct") {
-      const lastUserText =
-        recentMessages.filter(m => m.role === "user").slice(-1)[0]?.content ||
-        "Опиши, що на цьому фото.";
-
-      safeMessages = [
-        {
-          role: "system",
-          content: modelConfig.system
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: lastUserText },
-            {
-              type: "image_url",
-              image_url: {
-                url: image.dataUrl
-              }
-            }
-          ]
-        }
-      ];
-    } else {
-      safeMessages = [
-        {
-          role: "system",
-          content: `${modelConfig.system} ${thinking ? "detailed thinking on" : "detailed thinking off"}`
-        },
-        ...recentMessages
-          .filter((m) =>
-            m &&
-            typeof m.content === "string" &&
-            ["user", "assistant", "system"].includes(m.role)
-          )
-          .map((m) => ({
-            role: m.role,
-            content: m.content
-          }))
-      ];
-    }
+    const safeMessages = normalizeMessagesForModel(
+      recentMessages,
+      modelConfig,
+      selectedModel,
+      image
+    );
 
     const requestPayload = {
       model: selectedModel,
@@ -187,33 +198,71 @@ export default async function handler(req, res) {
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let finalSent = false;
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
 
-      for (const event of events) {
-        const lines = event.split("\n");
-        let dataLines = [];
+        for (const event of events) {
+          const lines = event.split("\n");
+          const dataLines = [];
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith(":")) continue;
-          if (trimmed.startsWith("data:")) {
-            dataLines.push(trimmed.slice(5).trim());
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(":")) continue;
+            if (trimmed.startsWith("data:")) {
+              dataLines.push(trimmed.slice(5).trim());
+            }
           }
-        }
 
-        const payload = dataLines.join("");
-        if (!payload) continue;
+          const payload = dataLines.join("");
+          if (!payload) continue;
+
+          if (payload === "[DONE]") {
+            sendSSE(res, { type: "done" });
+            res.write("data: [DONE]\n\n");
+            finalSent = true;
+            res.end();
+            return;
+          }
+
+          try {
+            const json = JSON.parse(payload);
+            const choice = json?.choices?.[0];
+            const deltaContent = choice?.delta?.content ?? "";
+            const finishReason = choice?.finish_reason ?? null;
+
+            if (deltaContent) {
+              sendSSE(res, {
+                type: "content",
+                content: deltaContent
+              });
+            }
+
+            if (finishReason) {
+              sendSSE(res, {
+                type: "finish",
+                finish_reason: finishReason
+              });
+            }
+          } catch {}
+        }
+      }
+
+      const tail = buffer.trim();
+      if (tail.startsWith("data:")) {
+        const payload = tail.slice(5).trim();
 
         if (payload === "[DONE]") {
           sendSSE(res, { type: "done" });
-          res.write(`data: [DONE]\n\n`);
+          res.write("data: [DONE]\n\n");
+          finalSent = true;
           res.end();
           return;
         }
@@ -239,11 +288,26 @@ export default async function handler(req, res) {
           }
         } catch {}
       }
-    }
 
-    sendSSE(res, { type: "done" });
-    res.write(`data: [DONE]\n\n`);
-    res.end();
+      if (!finalSent) {
+        sendSSE(res, { type: "done" });
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+    } catch (streamError) {
+      if (!res.writableEnded) {
+        sendSSE(res, {
+          type: "error",
+          message: streamError?.message || "Streaming crashed"
+        });
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {}
+    }
   } catch (error) {
     if (!res.headersSent) {
       return res.status(500).json({
@@ -257,7 +321,7 @@ export default async function handler(req, res) {
         type: "error",
         message: error?.message || "Streaming crashed"
       });
-      res.write(`data: [DONE]\n\n`);
+      res.write("data: [DONE]\n\n");
       res.end();
     } catch {}
   }
