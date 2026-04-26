@@ -31,6 +31,8 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
+let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
+let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
 // Vercel автоматично підставляє значення NEXT_PUBLIC_ змінних, якщо проєкт збирається через Next.js/Vite.
 // Якщо це звичайний статичний HTML деплой на Vercel, то змінні не інжектуються у .js файли напряму.
