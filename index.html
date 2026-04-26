@@ -14,9 +14,21 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-top">
-        <h2>Чати</h2>
+        <div>
+          <h2>Чати</h2>
+          <div class="sidebar-subtitle">Локальна історія v1</div>
+        </div>
         <button id="newChatBtn" class="primary-btn small-btn">+ Новий чат</button>
       </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Швидкі дії</div>
+        <div class="quick-actions">
+          <button id="exportJsonBtn" class="ghost-btn small-btn">Експорт JSON</button>
+          <button id="exportMdBtn" class="ghost-btn small-btn">Експорт MD</button>
+        </div>
+      </div>
+
       <div id="chatList" class="chat-list"></div>
     </aside>
 
@@ -26,7 +38,12 @@
           <h1>AI Chat BY Антон</h1>
           <p id="chatTitle">Новий чат</p>
         </div>
+
         <div class="topbar-actions">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span id="statusText">Готово</span>
+          </div>
           <button id="clearBtn" class="ghost-btn">Очистити чат</button>
         </div>
       </header>
@@ -40,6 +57,17 @@
           rows="1"
           required
         ></textarea>
+
+        <div id="selectedImageBar" class="selected-image-bar hidden">
+          <div class="selected-image-left">
+            <img id="selectedImagePreview" alt="preview" />
+            <div class="selected-image-meta">
+              <strong id="selectedImageName">Фото не вибрано</strong>
+              <span id="selectedImageHint">Фото буде відправлено разом із наступним повідомленням.</span>
+            </div>
+          </div>
+          <button type="button" id="removeImageBtn" class="ghost-btn small-btn">Прибрати фото</button>
+        </div>
 
         <div class="composer-row">
           <div class="left-controls">
@@ -68,11 +96,6 @@
             <button type="button" id="stopBtn" class="ghost-btn danger-btn" disabled>Стоп</button>
             <button type="submit" id="sendBtn" class="primary-btn">Надіслати</button>
           </div>
-        </div>
-
-        <div id="selectedImageBar" class="selected-image-bar hidden">
-          <span id="selectedImageName">Фото не вибрано</span>
-          <button type="button" id="removeImageBtn" class="ghost-btn small-btn">Прибрати фото</button>
         </div>
       </form>
     </div>
