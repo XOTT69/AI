@@ -78,6 +78,21 @@ function ensureChat() {
 
 function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text || "")); }
 
+function renderAuthState() {
+  if (!authLoggedOut || !authLoggedIn) return;
+  if (!currentUser) {
+    authLoggedOut.classList.remove("hidden");
+    authLoggedIn.classList.add("hidden");
+    return;
+  }
+  authLoggedOut.classList.add("hidden");
+  authLoggedIn.classList.remove("hidden");
+  const meta = currentUser.user_metadata || {};
+  if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
+  if (userEmail) userEmail.textContent = currentUser.email || "Без email";
+  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
+}
+
 function renderChatList() {
   if (!chatList) return;
   chatList.innerHTML = "";
@@ -124,6 +139,7 @@ function renderMessages() {
 }
 
 function renderAll() {
+  renderAuthState();
   renderChatList();
   renderMessages();
   fastModeBtn?.classList.toggle("active", state.mode === "fast");
@@ -169,7 +185,6 @@ function setBusy(isBusy, status = "Готово") {
   updateStatus(status);
 }
 
-// Запит на наш безпечний проксі `/api/proxy`, де схований ключ NVIDIA
 async function sendChatMessage(text) {
   if (requestInFlight) return;
   
@@ -208,7 +223,6 @@ async function sendChatMessage(text) {
   currentController = controller;
 
   try {
-    // ЗВЕРТАЄМОСЯ ДО НАШОГО ПРОКСІ НА VERCEL (не до /api/chat)
     const response = await fetch("/api/proxy", {
       method: "POST",
       headers: {
@@ -275,6 +289,7 @@ async function sendChatMessage(text) {
   }
 }
 
+// Події інтерфейсу
 form?.addEventListener("submit", (e) => { e.preventDefault(); const text = promptInput?.value.trim(); if (text) sendChatMessage(text); });
 promptInput?.addEventListener("input", autoResize);
 promptInput?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form?.requestSubmit(); } });
@@ -293,5 +308,29 @@ imageInput?.addEventListener("change", async () => {
 });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
+// Логіка Авторизації Supabase
+sb.auth.onAuthStateChange(async (_event, session) => {
+  currentUser = session?.user || null;
+  renderAuthState();
+});
+
+sb.auth.getSession().then(({data}) => {
+  currentUser = data?.session?.user || null;
+  renderAuthState();
+}).catch(()=>{});
+
+googleLoginBtn?.addEventListener("click", async () => {
+  if (!sb.auth.signInWithOAuth) { alert("Supabase не підключено"); return; }
+  await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" }});
+});
+
+logoutBtn?.addEventListener("click", async () => {
+  if (!sb.auth.signOut) return;
+  await sb.auth.signOut();
+  currentUser = null;
+  renderAuthState();
+});
+
+// Ініціалізація
 renderAll();
 autoResize();
