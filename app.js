@@ -32,7 +32,6 @@ const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 
-// 1. БЕЗПЕЧНА ІНІЦІАЛІЗАЦІЯ SUPABASE
 let supaUrl = "";
 let supaKey = "";
 
@@ -70,7 +69,7 @@ if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v14";
+const STORAGE_KEY = "ai-chat-sync-v15";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -86,6 +85,18 @@ marked.setOptions({ breaks: true, gfm: true });
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function updateStatus(text) { if (statusText) statusText.textContent = text; }
+
+function closeAllChatMenus() {
+  document.querySelectorAll(".chat-menu.show").forEach(el => el.classList.remove("show"));
+}
+
+function closeMobileSidebar() {
+  if (!sidebar || !mobileOverlay) return;
+  if (window.innerWidth > 960) return;
+  sidebar.classList.remove("open");
+  mobileOverlay.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+}
 
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
@@ -140,7 +151,7 @@ function renderChatList() {
     
     const openBtn = document.createElement("button");
     openBtn.textContent = "Відкрити";
-    openBtn.onclick = (e) => { e.stopPropagation(); state.activeChatId = item.id; saveState(); renderAll(); };
+    openBtn.onclick = (e) => { e.stopPropagation(); state.activeChatId = item.id; saveState(); renderAll(); closeAllChatMenus(); closeMobileSidebar(); };
     
     const delBtn = document.createElement("button");
     delBtn.textContent = "Видалити";
@@ -163,7 +174,7 @@ function renderChatList() {
     menu.append(openBtn, delBtn);
     menuWrap.append(menuBtn, menu);
     div.append(title, meta, menuWrap);
-    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); }};
+    div.onclick = () => { if(!requestInFlight) { state.activeChatId = item.id; saveState(); renderAll(); closeMobileSidebar(); }};
     chatList.appendChild(div);
   }
 }
@@ -255,7 +266,6 @@ function setBusy(isBusy, status = "Готово") {
   updateStatus(status);
 }
 
-// ОСНОВНА ФУНКЦІЯ СТРІМІНГУ (ПОСТУПОВИЙ ДРУК)
 async function sendChatMessage(text) {
   if (requestInFlight) return;
   const active = ensureChat();
@@ -269,7 +279,7 @@ async function sendChatMessage(text) {
   
   const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
   active.messages.push(assistantMsg);
-  renderAll(); // Малює порожній блок для ШІ
+  renderAll();
   
   setBusy(true, "Генерація...");
   clearSelectedImage();
@@ -283,10 +293,10 @@ async function sendChatMessage(text) {
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: modelSelect?.value || "deepseek-ai/deepseek-v3",
+        model: modelSelect?.value || "deepseek-ai/deepseek-v4-flash",
         thinking: !!thinkingCheckbox?.checked,
         responseMode: state.mode,
-        stream: true, // Стрімінг увімкнено
+        stream: true,
         messages: active.messages.slice(-10).filter(m => m.id !== assistantMsg.id),
         image: selectedImage?.dataUrl ? { dataUrl: selectedImage.dataUrl } : null
       })
@@ -298,7 +308,6 @@ async function sendChatMessage(text) {
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
 
-    // Знаходимо DOM-елемент, куди будемо "друкувати" текст
     const msgEls = chat.querySelectorAll('.message.assistant .message-content');
     const targetEl = msgEls[msgEls.length - 1];
 
@@ -321,7 +330,6 @@ async function sendChatMessage(text) {
               const parsed = JSON.parse(dataStr);
               if (parsed.type === "content" && parsed.content) {
                 assistantMsg.content += parsed.content;
-                // Плавне оновлення екрану
                 if (targetEl) {
                   targetEl.innerHTML = renderMarkdown(assistantMsg.content);
                   chat.scrollTop = chat.scrollHeight;
@@ -404,7 +412,6 @@ autoResize();
 updateSelectedImageUI();
 updateStatus("Готово");
 
-// Швидкий старт auth, щоб не блокувати UI
 sb.auth.getSession().then(({data}) => {
   currentUser = data?.session?.user || null;
   renderAuthState();
