@@ -25,6 +25,7 @@ const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
+const themeToggleBtn = document.getElementById("themeToggleBtn");
 
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
@@ -67,7 +68,7 @@ if (supaUrl && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v26";
+const STORAGE_KEY = "ai-chat-sync-v27";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -75,8 +76,9 @@ let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
-  state = { activeChatId: null, chats: [], mode: "fast" };
+  state = { activeChatId: null, chats: [], mode: "fast", theme: "dark" };
 }
+if (!state.theme) state.theme = "dark"; // Захист для старих збережень
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -85,6 +87,21 @@ function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 function updateStatus(text) { if (statusText) statusText.textContent = text; }
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
+// --- ТЕМА ---
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
+  }
+}
+
+themeToggleBtn?.addEventListener("click", () => {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  saveState();
+  applyTheme();
+});
+
+// --- МЕНЮ ---
 function openSidebar() {
   sidebar.classList.add("open");
   mobileOverlay.classList.add("show");
@@ -102,6 +119,7 @@ hamburgerBtn?.addEventListener("click", openSidebar);
 closeSidebarBtn?.addEventListener("click", closeSidebar);
 mobileOverlay?.addEventListener("click", closeSidebar);
 
+// --- ЧАТ ---
 function ensureChat() {
   let active = getActiveChat();
   if (!active) {
@@ -130,7 +148,6 @@ function renderAuthState() {
   if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/40x40/png";
 }
 
-// ДОДАНО КНОПКУ ВИДАЛЕННЯ ЧАТУ
 function renderChatList() {
   if (!chatList) return;
   chatList.innerHTML = "";
@@ -138,7 +155,6 @@ function renderChatList() {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
     
-    // Блок з текстом
     const infoDiv = document.createElement("div");
     infoDiv.className = "chat-item-info";
     
@@ -152,17 +168,15 @@ function renderChatList() {
     
     infoDiv.append(title, meta);
     
-    // Кнопка видалення
     const delBtn = document.createElement("button");
     delBtn.className = "chat-item-delete";
     delBtn.innerHTML = "✕";
     delBtn.title = "Видалити чат";
     
     delBtn.onclick = (e) => {
-      e.stopPropagation(); // Щоб клік не відкривав чат
+      e.stopPropagation();
       if (confirm("Ви дійсно хочете видалити цей чат?")) {
         state.chats = state.chats.filter(c => c.id !== item.id);
-        // Якщо видалили активний чат, перемикаємось на перший в списку
         if (state.activeChatId === item.id) {
           state.activeChatId = state.chats.length > 0 ? state.chats[0].id : null;
         }
@@ -173,7 +187,6 @@ function renderChatList() {
     
     div.append(infoDiv, delBtn);
     
-    // Відкриття чату по кліку на сам блок
     div.onclick = () => {
       if (requestInFlight) return;
       state.activeChatId = item.id;
@@ -461,6 +474,7 @@ logoutBtn?.addEventListener("click", async () => {
   renderAuthState();
 });
 
+applyTheme();
 renderAll();
 autoResize();
 updateSelectedImageUI();
