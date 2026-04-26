@@ -32,8 +32,9 @@ const mobileOverlay = document.getElementById("mobileOverlay");
 const exportJsonBtn = document.getElementById("exportJsonBtn");
 const exportMdBtn = document.getElementById("exportMdBtn");
 
-let supaUrl = window.NEXT_PUBLIC_SUPABASE_URL || window.config?.SUPABASE_URL || window.SUPABASE_URL || "";
-let supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.config?.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || "";
+// Безпечно беремо ключі Supabase (Vercel автоматично інжектує NEXT_PUBLIC_ під час збірки)
+let supaUrl = ""; // Встав сюди свій URL бази даних Supabase
+let supaKey = ""; // Встав сюди свій ANON ключ бази даних Supabase
 let sb = null;
 
 if (supaUrl && supaUrl.startsWith("http") && supaKey && window.supabase) {
