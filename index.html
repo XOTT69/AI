@@ -5,19 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AI Chat — Sync & Vision</title>
   
-  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
-  <!-- Markdown & DOMPurify -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-
-  <!-- Підсвітка синтаксису -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   
-  <!-- Твої стилі -->
   <link rel="stylesheet" href="/style.css">
-
   <script src="/config.js"></script>
 </head>
 <body>
@@ -67,8 +60,8 @@
       
       <div class="topbar-controls">
         <select id="model" class="control-btn">
-          <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash (Швидкий)</option>
-          <option value="deepseek-ai/deepseek-v4-pro">DeepSeek V4 Pro (Розумний)</option>
+          <option value="meta/llama-3.1-8b-instruct">Llama 3.1 8B (Швидкий)</option>
+          <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B (Універсал)</option>
           <option value="google/gemma-3-27b-it">Gemma 3 27B (Фото і OCR)</option>
           <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys Llama 70B (Код)</option>
         </select>
