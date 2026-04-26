@@ -3,13 +3,13 @@ const ALLOWED_MODELS = {
     label: "DeepSeek V4 Pro — Розумний універсал",
     system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, глибоко і по суті.",
     fast: { maxTokens: 1800, temperature: 0.2 },
-    smart: { maxTokens: 3500, temperature: 0.45 }
+    smart: { maxTokens: 2400, temperature: 0.3 }
   },
-  "z-ai/glm5.1": {
+  "z-ai/glm-5.1": {
     label: "GLM-5.1 — Сильний reasoning",
     system: "Ти AI-помічник нового покоління. Відповідай українською, технічно сильно, структуровано, детально і практично.",
     fast: { maxTokens: 1800, temperature: 0.2 },
-    smart: { maxTokens: 3500, temperature: 0.45 }
+    smart: { maxTokens: 2400, temperature: 0.3 }
   },
   "deepseek-ai/deepseek-v4-flash": {
     label: "DeepSeek V4 Flash — Швидкий",
@@ -130,6 +130,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  let clientClosed = false;
+  req.on("close", () => {
+    clientClosed = true;
+  });
+
   try {
     if (!process.env.NVIDIA_API_KEY) {
       return res.status(500).json({ error: "NVIDIA_API_KEY is missing" });
@@ -169,7 +174,7 @@ export default async function handler(req, res) {
         : modeConfig.temperature,
       top_p: 0.9,
       max_tokens: thinking
-        ? Math.max(modeConfig.maxTokens, 2600)
+        ? Math.min(Math.max(modeConfig.maxTokens, 2200), 2400)
         : modeConfig.maxTokens,
       stream: Boolean(stream)
     };
@@ -246,6 +251,11 @@ export default async function handler(req, res) {
 
     try {
       while (true) {
+        if (clientClosed) {
+          try { reader.cancel(); } catch {}
+          break;
+        }
+
         const { value, done } = await reader.read();
         if (done) break;
 
@@ -333,7 +343,7 @@ export default async function handler(req, res) {
         } catch {}
       }
 
-      if (!finalSent) {
+      if (!finalSent && !res.writableEnded) {
         sendSSE(res, { type: "done" });
         res.write("data: [DONE]\n\n");
         res.end();
