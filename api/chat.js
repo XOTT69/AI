@@ -1,24 +1,18 @@
 const ALLOWED_MODELS = {
   "deepseek-ai/deepseek-v4-pro": {
-    label: "DeepSeek V4 Pro — Розумний універсал",
+    label: "DeepSeek V4 Pro — Універсал",
     system: "Ти дуже сильний AI-помічник. Відповідай українською мовою, чітко, розумно, глибоко і по суті.",
     fast: { maxTokens: 1800, temperature: 0.2 },
     smart: { maxTokens: 2400, temperature: 0.3 }
   },
-  "z-ai/glm-5.1": {
-    label: "GLM-5.1 — Сильний reasoning",
-    system: "Ти AI-помічник нового покоління. Відповідай українською, технічно сильно, структуровано, детально і практично.",
-    fast: { maxTokens: 1800, temperature: 0.2 },
-    smart: { maxTokens: 2400, temperature: 0.3 }
-  },
   "deepseek-ai/deepseek-v4-flash": {
-    label: "DeepSeek V4 Flash — Швидкий",
+    label: "DeepSeek Flash — Швидкий",
     system: "Ти швидкий AI-помічник. Відповідай українською коротко, чітко і корисно.",
     fast: { maxTokens: 1200, temperature: 0.15 },
     smart: { maxTokens: 2200, temperature: 0.3 }
   },
-  "meta/llama-3.2-11b-vision-instruct": {
-    label: "Llama 3.2 Vision — Фото й OCR",
+  "google/gemma-3-27b-it": {
+    label: "Gemma 3 (27B) — Фото й OCR",
     system: [
       "Ти мультимодальний AI-помічник для точного OCR, аналізу фото, скрінів і документів.",
       "Відповідай українською.",
@@ -27,11 +21,16 @@ const ALLOWED_MODELS = {
       "Якщо користувач просить OCR або аналіз документа:",
       "1) Спочатку коротко опиши тип документа.",
       "2) Потім перепиши видимий текст максимально дослівно без повторів.",
-      "3) Потім дай структурований список полів, лише якщо вони реально видимі.",
-      "4) Не заповнюй пропуски здогадками."
+      "3) Потім дай структурований список полів, лише якщо вони реально видимі."
     ].join(" "),
-    fast: { maxTokens: 1800, temperature: 0.1 },
-    smart: { maxTokens: 3200, temperature: 0.2 }
+    fast: { maxTokens: 2000, temperature: 0.1 },
+    smart: { maxTokens: 4000, temperature: 0.2 }
+  },
+  "abacusai/dracarys-llama-3.1-70b-instruct": {
+    label: "Dracarys Llama (70B) — Код і Текст",
+    system: "Ти AI-помічник експертного рівня для написання коду, глибокої аналітики та структурованих відповідей українською мовою.",
+    fast: { maxTokens: 2000, temperature: 0.2 },
+    smart: { maxTokens: 3000, temperature: 0.4 }
   }
 };
 
@@ -49,7 +48,6 @@ function getLastUserMessage(messages) {
 
 function buildVisionPrompt(userText = "") {
   const text = String(userText || "").trim().toLowerCase();
-
   const looksLikeDoc =
     text.includes("ocr") ||
     text.includes("документ") ||
@@ -80,48 +78,26 @@ function buildVisionPrompt(userText = "") {
 }
 
 function normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image) {
-  if (image?.dataUrl && selectedModel === "meta/llama-3.2-11b-vision-instruct") {
+  if (image?.dataUrl && selectedModel === "google/gemma-3-27b-it") {
     const lastUser = getLastUserMessage(recentMessages);
     const visionPrompt = buildVisionPrompt(lastUser?.content || "");
-
     return [
-      {
-        role: "system",
-        content: modelConfig.system
-      },
+      { role: "system", content: modelConfig.system },
       {
         role: "user",
         content: [
-          {
-            type: "text",
-            text: visionPrompt
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: image.dataUrl
-            }
-          }
+          { type: "text", text: visionPrompt },
+          { type: "image_url", image_url: { url: image.dataUrl } }
         ]
       }
     ];
   }
 
   return [
-    {
-      role: "system",
-      content: modelConfig.system
-    },
+    { role: "system", content: modelConfig.system },
     ...recentMessages
-      .filter((m) =>
-        m &&
-        typeof m.content === "string" &&
-        ["user", "assistant", "system"].includes(m.role)
-      )
-      .map((m) => ({
-        role: m.role,
-        content: m.content
-      }))
+      .filter((m) => m && typeof m.content === "string" && ["user", "assistant", "system"].includes(m.role))
+      .map((m) => ({ role: m.role, content: m.content }))
   ];
 }
 
@@ -140,42 +116,25 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "NVIDIA_API_KEY is missing" });
     }
 
-    const body =
-      typeof req.body === "string"
-        ? JSON.parse(req.body)
-        : (req.body || {});
-
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
     const { messages, model, thinking, stream, responseMode, image } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Messages are required" });
     }
 
-    const selectedModel = ALLOWED_MODELS[model]
-      ? model
-      : "deepseek-ai/deepseek-v4-pro";
-
+    const selectedModel = ALLOWED_MODELS[model] ? model : "deepseek-ai/deepseek-v4-pro";
     const modelConfig = ALLOWED_MODELS[selectedModel];
     const recentMessages = trimMessages(messages, 10);
     const modeConfig = responseMode === "smart" ? modelConfig.smart : modelConfig.fast;
-
-    const safeMessages = normalizeMessagesForModel(
-      recentMessages,
-      modelConfig,
-      selectedModel,
-      image
-    );
+    const safeMessages = normalizeMessagesForModel(recentMessages, modelConfig, selectedModel, image);
 
     const requestPayload = {
       model: selectedModel,
       messages: safeMessages,
-      temperature: thinking
-        ? Math.max(modeConfig.temperature, 0.25)
-        : modeConfig.temperature,
+      temperature: thinking ? Math.max(modeConfig.temperature, 0.25) : modeConfig.temperature,
       top_p: 0.9,
-      max_tokens: thinking
-        ? Math.min(Math.max(modeConfig.maxTokens, 2200), 2400)
-        : modeConfig.maxTokens,
+      max_tokens: thinking ? Math.min(Math.max(modeConfig.maxTokens, 2200), 4000) : modeConfig.maxTokens,
       stream: Boolean(stream)
     };
 
@@ -191,7 +150,6 @@ export default async function handler(req, res) {
 
     if (!stream) {
       const raw = await upstream.text();
-
       if (!upstream.ok) {
         return res.status(upstream.status).json({
           error: "NVIDIA upstream error",
@@ -199,23 +157,13 @@ export default async function handler(req, res) {
           details: raw
         });
       }
-
       let data;
       try {
         data = JSON.parse(raw);
       } catch {
-        return res.status(500).json({
-          error: "Invalid JSON from NVIDIA",
-          model: selectedModel,
-          details: raw
-        });
+        return res.status(500).json({ error: "Invalid JSON from NVIDIA", model: selectedModel, details: raw });
       }
-
-      const content =
-        data?.choices?.[0]?.message?.content ||
-        data?.choices?.[0]?.text ||
-        "";
-
+      const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || "";
       return res.status(200).json({
         content,
         model: selectedModel,
@@ -226,11 +174,7 @@ export default async function handler(req, res) {
 
     if (!upstream.ok || !upstream.body) {
       const raw = await upstream.text();
-      return res.status(upstream.status).json({
-        error: "NVIDIA upstream error",
-        model: selectedModel,
-        details: raw
-      });
+      return res.status(upstream.status).json({ error: "NVIDIA upstream error", model: selectedModel, details: raw });
     }
 
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -238,11 +182,7 @@ export default async function handler(req, res) {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    sendSSE(res, {
-      type: "meta",
-      label: modelConfig.label,
-      model: selectedModel
-    });
+    sendSSE(res, { type: "meta", label: modelConfig.label, model: selectedModel });
 
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
@@ -255,7 +195,6 @@ export default async function handler(req, res) {
           try { reader.cancel(); } catch {}
           break;
         }
-
         const { value, done } = await reader.read();
         if (done) break;
 
@@ -293,17 +232,10 @@ export default async function handler(req, res) {
             const finishReason = choice?.finish_reason ?? null;
 
             if (deltaContent) {
-              sendSSE(res, {
-                type: "content",
-                content: deltaContent
-              });
+              sendSSE(res, { type: "content", content: deltaContent });
             }
-
             if (finishReason) {
-              sendSSE(res, {
-                type: "finish",
-                finish_reason: finishReason
-              });
+              sendSSE(res, { type: "finish", finish_reason: finishReason });
             }
           } catch {}
         }
@@ -312,7 +244,6 @@ export default async function handler(req, res) {
       const tail = buffer.trim();
       if (tail.startsWith("data:")) {
         const payload = tail.slice(5).trim();
-
         if (payload === "[DONE]") {
           sendSSE(res, { type: "done" });
           res.write("data: [DONE]\n\n");
@@ -328,17 +259,10 @@ export default async function handler(req, res) {
           const finishReason = choice?.finish_reason ?? null;
 
           if (deltaContent) {
-            sendSSE(res, {
-              type: "content",
-              content: deltaContent
-            });
+            sendSSE(res, { type: "content", content: deltaContent });
           }
-
           if (finishReason) {
-            sendSSE(res, {
-              type: "finish",
-              finish_reason: finishReason
-            });
+            sendSSE(res, { type: "finish", finish_reason: finishReason });
           }
         } catch {}
       }
@@ -350,31 +274,19 @@ export default async function handler(req, res) {
       }
     } catch (streamError) {
       if (!res.writableEnded) {
-        sendSSE(res, {
-          type: "error",
-          message: streamError?.message || "Streaming crashed"
-        });
+        sendSSE(res, { type: "error", message: streamError?.message || "Streaming crashed" });
         res.write("data: [DONE]\n\n");
         res.end();
       }
     } finally {
-      try {
-        reader.releaseLock();
-      } catch {}
+      try { reader.releaseLock(); } catch {}
     }
   } catch (error) {
     if (!res.headersSent) {
-      return res.status(500).json({
-        error: "Function crashed",
-        details: error?.message || String(error)
-      });
+      return res.status(500).json({ error: "Function crashed", details: error?.message || String(error) });
     }
-
     try {
-      sendSSE(res, {
-        type: "error",
-        message: error?.message || "Streaming crashed"
-      });
+      sendSSE(res, { type: "error", message: error?.message || "Streaming crashed" });
       res.write("data: [DONE]\n\n");
       res.end();
     } catch {}
