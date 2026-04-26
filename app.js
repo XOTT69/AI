@@ -29,8 +29,8 @@ const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportMdBtn = document.getElementById("exportMdBtn");
+const hamburgerBtn = document.getElementById("hamburgerBtn");
+const installBtn = document.getElementById("installBtn");
 
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
@@ -76,11 +76,12 @@ if (supaUrl && supaKey && window.supabase) {
   };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v21";
+const STORAGE_KEY = "ai-chat-sync-v22";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
+let deferredPrompt = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
@@ -126,6 +127,20 @@ function renderMarkdown(text) {
   return DOMPurify.sanitize(marked.parse(text || ""));
 }
 
+function openSidebar() {
+  if (!sidebar || !mobileOverlay) return;
+  sidebar.classList.add("open");
+  mobileOverlay.classList.add("show");
+  document.body.classList.add("no-scroll");
+}
+
+function closeSidebar() {
+  if (!sidebar || !mobileOverlay) return;
+  sidebar.classList.remove("open");
+  mobileOverlay.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+}
+
 function renderAuthState() {
   if (!authLoggedOut || !authLoggedIn) return;
 
@@ -166,6 +181,7 @@ function renderChatList() {
       state.activeChatId = item.id;
       saveState();
       renderAll();
+      closeSidebar();
     };
 
     chatList.appendChild(div);
@@ -226,7 +242,7 @@ function renderAll() {
 function autoResize() {
   if (!promptInput) return;
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 240) + "px";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
 }
 
 function updateSelectedImageUI() {
@@ -402,6 +418,37 @@ async function sendChatMessage(text) {
   }
 }
 
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", async () => {
+      try {
+        await navigator.serviceWorker.register("/sw.js");
+      } catch (_) {}
+    });
+  }
+}
+
+function setupInstallPrompt() {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn?.classList.remove("hidden");
+  });
+
+  installBtn?.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn?.classList.add("hidden");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredPrompt = null;
+    installBtn?.classList.add("hidden");
+  });
+}
+
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = promptInput?.value.trim();
@@ -432,6 +479,7 @@ newChatBtn?.addEventListener("click", () => {
   state.activeChatId = null;
   ensureChat();
   renderAll();
+  closeSidebar();
 });
 
 fastModeBtn?.addEventListener("click", () => {
@@ -456,12 +504,15 @@ imageInput?.addEventListener("change", async () => {
     const dataUrl = await fileToDataUrl(file);
     selectedImage = { name: file.name, type: file.type, dataUrl };
     updateSelectedImageUI();
-  } catch (e) {
+  } catch (_) {
     alert("Помилка фото");
   }
 });
 
 removeImageBtn?.addEventListener("click", clearSelectedImage);
+
+hamburgerBtn?.addEventListener("click", openSidebar);
+mobileOverlay?.addEventListener("click", closeSidebar);
 
 sb.auth.onAuthStateChange?.((_event, session) => {
   currentUser = session?.user || null;
@@ -494,7 +545,13 @@ logoutBtn?.addEventListener("click", async () => {
   renderAuthState();
 });
 
+syncBtn?.addEventListener("click", () => {
+  alert("Синхронізацію можна додати наступним кроком через таблиці Supabase.");
+});
+
 renderAll();
 autoResize();
 updateSelectedImageUI();
 updateStatus("Готово");
+registerServiceWorker();
+setupInstallPrompt();
