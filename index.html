@@ -25,38 +25,62 @@
 
       <button id="newChatBtn" type="button" class="primary-btn full-btn">+ Новий чат</button>
 
-      <div class="auth-card">
-        <div id="authLoggedOut">
-          <div class="sidebar-label">Авторизація</div>
-          <button id="googleLoginBtn" type="button" class="primary-btn full-btn">Увійти через Google</button>
-        </div>
+      <div class="sidebar-card compact-card">
+        <button id="profileToggleBtn" type="button" class="section-toggle">
+          <span>Профіль</span>
+          <span id="profileToggleIcon">−</span>
+        </button>
 
-        <div id="authLoggedIn" class="hidden">
-          <button id="profileMenuBtn" type="button" class="profile-card">
-            <img id="userAvatar" class="user-avatar" alt="avatar" />
-            <div class="user-meta">
-              <strong id="userName">Користувач</strong>
-              <span id="userEmail">email@example.com</span>
+        <div id="profileSection">
+          <div class="auth-card no-card">
+            <div id="authLoggedOut">
+              <div class="sidebar-label">Авторизація</div>
+              <button id="googleLoginBtn" type="button" class="primary-btn full-btn">Увійти через Google</button>
             </div>
-            <span class="profile-arrow">›</span>
-          </button>
 
-          <div class="profile-actions">
-            <button id="syncBtn" type="button" class="ghost-btn full-btn">Синхронізувати</button>
-            <button id="logoutBtn" type="button" class="ghost-btn full-btn danger-btn">Вийти</button>
+            <div id="authLoggedIn" class="hidden">
+              <button id="profileMenuBtn" type="button" class="profile-card">
+                <img id="userAvatar" class="user-avatar" alt="avatar" />
+                <div class="user-meta">
+                  <strong id="userName">Користувач</strong>
+                  <span id="userEmail">email@example.com</span>
+                </div>
+                <span class="profile-arrow">›</span>
+              </button>
+
+              <div class="profile-actions compact-actions">
+                <button id="syncBtn" type="button" class="ghost-btn full-btn">Синхронізувати</button>
+                <button id="logoutBtn" type="button" class="ghost-btn full-btn danger-btn">Вийти</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-label">Швидкі дії</div>
-        <div class="stack-actions">
-          <button id="exportJsonBtn" type="button" class="ghost-btn full-btn">Експорт JSON</button>
-          <button id="exportMdBtn" type="button" class="ghost-btn full-btn">Експорт MD</button>
+      <div class="sidebar-card compact-card">
+        <button id="quickActionsToggleBtn" type="button" class="section-toggle">
+          <span>Швидкі дії</span>
+          <span id="quickActionsToggleIcon">+</span>
+        </button>
+
+        <div id="quickActionsSection" class="hidden">
+          <div class="stack-actions compact-actions">
+            <button id="exportJsonBtn" type="button" class="ghost-btn full-btn">Експорт JSON</button>
+            <button id="exportMdBtn" type="button" class="ghost-btn full-btn">Експорт MD</button>
+          </div>
         </div>
       </div>
 
-      <div id="chatList" class="chat-list"></div>
+      <div class="sidebar-card compact-card">
+        <button id="historyToggleBtn" type="button" class="section-toggle">
+          <span>Історія чатів</span>
+          <span id="historyToggleIcon">−</span>
+        </button>
+
+        <div id="historySection">
+          <div id="chatList" class="chat-list compact-list"></div>
+        </div>
+      </div>
     </aside>
 
     <main class="main-shell">
@@ -150,6 +174,18 @@
     const openSidebarBtn = document.getElementById("openSidebarBtn");
     const closeSidebarBtn = document.getElementById("closeSidebarBtn");
 
+    const profileToggleBtn = document.getElementById("profileToggleBtn");
+    const profileSection = document.getElementById("profileSection");
+    const profileToggleIcon = document.getElementById("profileToggleIcon");
+
+    const quickActionsToggleBtn = document.getElementById("quickActionsToggleBtn");
+    const quickActionsSection = document.getElementById("quickActionsSection");
+    const quickActionsToggleIcon = document.getElementById("quickActionsToggleIcon");
+
+    const historyToggleBtn = document.getElementById("historyToggleBtn");
+    const historySection = document.getElementById("historySection");
+    const historyToggleIcon = document.getElementById("historyToggleIcon");
+
     function openSidebar() {
       sidebar.classList.add("open");
       mobileOverlay.classList.add("show");
@@ -162,14 +198,29 @@
       document.body.classList.remove("no-scroll");
     }
 
+    function toggleSection(section, icon) {
+      section.classList.toggle("hidden");
+      icon.textContent = section.classList.contains("hidden") ? "+" : "−";
+    }
+
     if (openSidebarBtn) openSidebarBtn.addEventListener("click", openSidebar);
     if (closeSidebarBtn) closeSidebarBtn.addEventListener("click", closeSidebar);
     if (mobileOverlay) mobileOverlay.addEventListener("click", closeSidebar);
 
+    if (profileToggleBtn) {
+      profileToggleBtn.addEventListener("click", () => toggleSection(profileSection, profileToggleIcon));
+    }
+
+    if (quickActionsToggleBtn) {
+      quickActionsToggleBtn.addEventListener("click", () => toggleSection(quickActionsSection, quickActionsToggleIcon));
+    }
+
+    if (historyToggleBtn) {
+      historyToggleBtn.addEventListener("click", () => toggleSection(historySection, historyToggleIcon));
+    }
+
     window.addEventListener("resize", () => {
-      if (window.innerWidth > 960) {
-        closeSidebar();
-      }
+      if (window.innerWidth > 960) closeSidebar();
     });
   </script>
 </body>
