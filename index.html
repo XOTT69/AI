@@ -2,8 +2,12 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
   <title>AI Chat BY Антон</title>
+
   <link rel="stylesheet" href="style.css" />
   <link
     rel="stylesheet"
@@ -20,10 +24,20 @@
           <h2>Чати</h2>
           <div class="sidebar-subtitle">Supabase sync v2</div>
         </div>
-        <button id="closeSidebarBtn" type="button" class="icon-btn mobile-only" aria-label="Закрити меню">✕</button>
+
+        <button
+          id="closeSidebarBtn"
+          type="button"
+          class="icon-btn mobile-only"
+          aria-label="Закрити меню"
+        >
+          ✕
+        </button>
       </div>
 
-      <button id="newChatBtn" type="button" class="primary-btn full-btn">+ Новий чат</button>
+      <button id="newChatBtn" type="button" class="primary-btn full-btn">
+        + Новий чат
+      </button>
 
       <div class="sidebar-card compact-card">
         <button id="profileToggleBtn" type="button" class="section-toggle">
@@ -35,7 +49,9 @@
           <div class="auth-card no-card">
             <div id="authLoggedOut">
               <div class="sidebar-label">Авторизація</div>
-              <button id="googleLoginBtn" type="button" class="primary-btn full-btn">Увійти через Google</button>
+              <button id="googleLoginBtn" type="button" class="primary-btn full-btn">
+                Увійти через Google
+              </button>
             </div>
 
             <div id="authLoggedIn" class="hidden">
@@ -49,8 +65,12 @@
               </button>
 
               <div class="profile-actions compact-actions">
-                <button id="syncBtn" type="button" class="ghost-btn full-btn">Синхронізувати</button>
-                <button id="logoutBtn" type="button" class="ghost-btn full-btn danger-btn">Вийти</button>
+                <button id="syncBtn" type="button" class="ghost-btn full-btn">
+                  Синхронізувати
+                </button>
+                <button id="logoutBtn" type="button" class="ghost-btn full-btn danger-btn">
+                  Вийти
+                </button>
               </div>
             </div>
           </div>
@@ -65,8 +85,12 @@
 
         <div id="quickActionsSection" class="hidden">
           <div class="stack-actions compact-actions">
-            <button id="exportJsonBtn" type="button" class="ghost-btn full-btn">Експорт JSON</button>
-            <button id="exportMdBtn" type="button" class="ghost-btn full-btn">Експорт MD</button>
+            <button id="exportJsonBtn" type="button" class="ghost-btn full-btn">
+              Експорт JSON
+            </button>
+            <button id="exportMdBtn" type="button" class="ghost-btn full-btn">
+              Експорт MD
+            </button>
           </div>
         </div>
       </div>
@@ -86,7 +110,15 @@
     <main class="main-shell">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="openSidebarBtn" type="button" class="icon-btn mobile-only" aria-label="Відкрити меню">☰</button>
+          <button
+            id="openSidebarBtn"
+            type="button"
+            class="icon-btn mobile-only"
+            aria-label="Відкрити меню"
+          >
+            ☰
+          </button>
+
           <div>
             <h1>AI Chat BY Антон</h1>
             <p id="chatTitle">Новий чат</p>
@@ -98,7 +130,10 @@
             <span class="status-dot"></span>
             <span id="statusText">Готово</span>
           </div>
-          <button id="clearBtn" type="button" class="ghost-btn desktop-only">Очистити чат</button>
+
+          <button id="clearBtn" type="button" class="ghost-btn desktop-only">
+            Очистити чат
+          </button>
         </div>
       </header>
 
@@ -109,10 +144,15 @@
           <img id="selectedImagePreview" alt="preview" />
           <div class="selected-image-meta">
             <strong id="selectedImageName">Фото не вибрано</strong>
-            <span id="selectedImageHint">Фото буде відправлено разом із наступним повідомленням.</span>
+            <span id="selectedImageHint">
+              Фото буде відправлено разом із наступним повідомленням.
+            </span>
           </div>
         </div>
-        <button type="button" id="removeImageBtn" class="ghost-btn small-btn">Прибрати</button>
+
+        <button type="button" id="removeImageBtn" class="ghost-btn small-btn">
+          Прибрати
+        </button>
       </div>
 
       <form id="chatForm" class="composer">
@@ -126,32 +166,63 @@
 
           <div class="composer-bottom">
             <div class="composer-tools">
-              <button type="button" id="imageBtn" class="ghost-btn round-btn">Фото</button>
-              <button type="button" id="generateImageBtn" class="ghost-btn hide-mobile">Згенерувати фото</button>
+              <button type="button" id="imageBtn" class="ghost-btn round-btn">
+                Фото
+              </button>
 
-              <div class="select-wrap hide-mobile">
+              <button
+                type="button"
+                id="generateImageBtn"
+                class="ghost-btn hide-mobile"
+              >
+                Згенерувати фото
+              </button>
+
+              <div class="select-wrap">
                 <select id="model">
-                  <option value="deepseek-ai/deepseek-v4-pro" selected>DeepSeek V4 Pro</option>
-                  <option value="z-ai/glm-5.1">GLM-5.1</option>
-                  <option value="deepseek-ai/deepseek-v4-flash">DeepSeek V4 Flash</option>
-                  <option value="meta/llama-3.2-11b-vision-instruct">Llama 3.2 Vision</option>
+                  <option value="deepseek-ai/deepseek-v4-flash" selected>
+                    DeepSeek V4 Flash
+                  </option>
+                  <option value="deepseek-ai/deepseek-v4-pro">
+                    DeepSeek V4 Pro
+                  </option>
+                  <option value="z-ai/glm-5.1">
+                    GLM-5.1
+                  </option>
+                  <option value="meta/llama-3.2-11b-vision-instruct">
+                    Llama 3.2 Vision
+                  </option>
                 </select>
               </div>
 
-              <label class="toggle hide-mobile">
+              <label class="toggle">
                 <input type="checkbox" id="thinking" />
                 <span>Thinking</span>
               </label>
 
-              <div class="mode-switch hide-mobile">
-                <button type="button" id="fastModeBtn" class="mode-btn active">Швидко</button>
-                <button type="button" id="smartModeBtn" class="mode-btn">Розумно</button>
+              <div class="mode-switch">
+                <button type="button" id="fastModeBtn" class="mode-btn active">
+                  Швидко
+                </button>
+                <button type="button" id="smartModeBtn" class="mode-btn">
+                  Розумно
+                </button>
               </div>
             </div>
 
             <div class="composer-actions">
-              <button type="button" id="stopBtn" class="ghost-btn danger-btn hide-mobile" disabled>Стоп</button>
-              <button type="submit" id="sendBtn" class="send-btn" aria-label="Надіслати">↑</button>
+              <button
+                type="button"
+                id="stopBtn"
+                class="ghost-btn danger-btn"
+                disabled
+              >
+                Стоп
+              </button>
+
+              <button type="submit" id="sendBtn" class="send-btn" aria-label="Надіслати">
+                ↑
+              </button>
             </div>
           </div>
         </div>
@@ -165,6 +236,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+
   <script src="config.js"></script>
   <script src="app.js"></script>
 
@@ -203,24 +275,40 @@
       icon.textContent = section.classList.contains("hidden") ? "+" : "−";
     }
 
-    if (openSidebarBtn) openSidebarBtn.addEventListener("click", openSidebar);
-    if (closeSidebarBtn) closeSidebarBtn.addEventListener("click", closeSidebar);
-    if (mobileOverlay) mobileOverlay.addEventListener("click", closeSidebar);
+    if (openSidebarBtn) {
+      openSidebarBtn.addEventListener("click", openSidebar);
+    }
+
+    if (closeSidebarBtn) {
+      closeSidebarBtn.addEventListener("click", closeSidebar);
+    }
+
+    if (mobileOverlay) {
+      mobileOverlay.addEventListener("click", closeSidebar);
+    }
 
     if (profileToggleBtn) {
-      profileToggleBtn.addEventListener("click", () => toggleSection(profileSection, profileToggleIcon));
+      profileToggleBtn.addEventListener("click", () => {
+        toggleSection(profileSection, profileToggleIcon);
+      });
     }
 
     if (quickActionsToggleBtn) {
-      quickActionsToggleBtn.addEventListener("click", () => toggleSection(quickActionsSection, quickActionsToggleIcon));
+      quickActionsToggleBtn.addEventListener("click", () => {
+        toggleSection(quickActionsSection, quickActionsToggleIcon);
+      });
     }
 
     if (historyToggleBtn) {
-      historyToggleBtn.addEventListener("click", () => toggleSection(historySection, historyToggleIcon));
+      historyToggleBtn.addEventListener("click", () => {
+        toggleSection(historySection, historyToggleIcon);
+      });
     }
 
     window.addEventListener("resize", () => {
-      if (window.innerWidth > 960) closeSidebar();
+      if (window.innerWidth > 960) {
+        closeSidebar();
+      }
     });
   </script>
 </body>
