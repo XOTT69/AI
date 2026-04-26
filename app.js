@@ -1,7 +1,6 @@
 const chat = document.getElementById("chat");
 const form = document.getElementById("chatForm");
 const promptInput = document.getElementById("prompt");
-const sendBtn = document.getElementById("sendBtn");
 const googleLoginBtn = document.getElementById("googleLoginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const authLoggedOut = document.getElementById("authLoggedOut");
@@ -9,9 +8,6 @@ const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
-const newChatBtn = document.getElementById("newChatBtn");
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const exportMdBtn = document.getElementById("exportMdBtn");
 const imageBtn = document.getElementById("imageBtn");
 const imageInput = document.getElementById("imageInput");
 const removeImageBtn = document.getElementById("removeImageBtn");
@@ -20,32 +16,17 @@ const selectedImageName = document.getElementById("selectedImageName");
 const selectedImageHint = document.getElementById("selectedImageHint");
 const selectedImagePreview = document.getElementById("selectedImagePreview");
 const statusText = document.getElementById("statusText");
-const syncBtn = document.getElementById("syncBtn");
 
 const SUPABASE_URL = window.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let selectedImage = null;
 let currentUser = null;
 
 function updateStatus(text) {
   if (statusText) statusText.textContent = text;
-}
-
-function updateSelectedImageUI() {
-  if (!selectedImage) {
-    selectedImageBar.classList.add("hidden");
-    selectedImageName.textContent = "Фото не вибрано";
-    selectedImageHint.textContent = "Фото буде відправлено разом із наступним повідомленням.";
-    selectedImagePreview.removeAttribute("src");
-    return;
-  }
-
-  selectedImageBar.classList.remove("hidden");
-  selectedImageName.textContent = selectedImage.name || "selected-image";
-  selectedImageHint.textContent = "Фото прикріплене.";
-  selectedImagePreview.src = selectedImage.dataUrl;
 }
 
 function renderAuthState() {
@@ -64,6 +45,21 @@ function renderAuthState() {
   userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
 }
 
+function updateSelectedImageUI() {
+  if (!selectedImage) {
+    selectedImageBar.classList.add("hidden");
+    selectedImageName.textContent = "Фото не вибрано";
+    selectedImageHint.textContent = "Фото буде відправлено разом із наступним повідомленням.";
+    selectedImagePreview.removeAttribute("src");
+    return;
+  }
+
+  selectedImageBar.classList.remove("hidden");
+  selectedImageName.textContent = selectedImage.name || "selected-image";
+  selectedImageHint.textContent = "Фото прикріплене.";
+  selectedImagePreview.src = selectedImage.dataUrl;
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -74,41 +70,41 @@ function fileToDataUrl(file) {
 }
 
 function addMessage(text) {
-  const el = document.createElement("div");
-  el.className = "message user";
+  const userEl = document.createElement("div");
+  userEl.className = "message user";
 
-  const inner = document.createElement("div");
-  inner.className = "message-content";
-  inner.textContent = text;
+  const userInner = document.createElement("div");
+  userInner.className = "message-content";
+  userInner.textContent = text;
 
   if (selectedImage?.dataUrl) {
     const img = document.createElement("img");
     img.src = selectedImage.dataUrl;
     img.className = "inline-preview-image";
-    inner.appendChild(img);
+    userInner.appendChild(img);
   }
 
-  el.appendChild(inner);
-  chat.appendChild(el);
+  userEl.appendChild(userInner);
+  chat.appendChild(userEl);
 
-  const reply = document.createElement("div");
-  reply.className = "message assistant";
+  const botEl = document.createElement("div");
+  botEl.className = "message assistant";
 
-  const replyInner = document.createElement("div");
-  replyInner.className = "message-content";
-  replyInner.textContent = currentUser
-    ? "Ти увійшов. Локальний чат працює, Google auth теж підключений."
-    : "Локальний чат працює. Тепер протестуй реальний Google login.";
+  const botInner = document.createElement("div");
+  botInner.className = "message-content";
+  botInner.textContent = currentUser
+    ? "Успішно. Ти залогінений, і базовий чат працює."
+    : "Повідомлення додано. Тепер протестуй Google login.";
 
-  reply.appendChild(replyInner);
-  chat.appendChild(reply);
+  botEl.appendChild(botInner);
+  chat.appendChild(botEl);
 
   chat.scrollTop = chat.scrollHeight;
 }
 
 async function initAuth() {
   try {
-    const { data, error } = await supabase.auth.getSession();
+    const { data, error } = await sb.auth.getSession();
 
     if (error) {
       console.error(error);
@@ -129,7 +125,7 @@ async function signInWithGoogle() {
   try {
     updateStatus("Перехід у Google...");
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await sb.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: window.location.origin + "/"
@@ -150,7 +146,7 @@ async function signInWithGoogle() {
 
 async function signOut() {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await sb.auth.signOut();
 
     if (error) {
       console.error(error);
@@ -163,29 +159,11 @@ async function signOut() {
     updateStatus("Вийшов");
   } catch (e) {
     console.error(e);
-    alert("Logout crash: " + (e.message || "невідома помилка"));
   }
 }
 
 googleLoginBtn.addEventListener("click", signInWithGoogle);
-
 logoutBtn.addEventListener("click", signOut);
-
-newChatBtn.addEventListener("click", () => {
-  alert("Новий чат працює");
-});
-
-exportJsonBtn.addEventListener("click", () => {
-  alert("Експорт JSON працює");
-});
-
-exportMdBtn.addEventListener("click", () => {
-  alert("Експорт MD працює");
-});
-
-syncBtn.addEventListener("click", () => {
-  alert("Sync підключимо наступним кроком");
-});
 
 imageBtn.addEventListener("click", () => {
   imageInput.click();
@@ -225,7 +203,7 @@ form.addEventListener("submit", (e) => {
   updateSelectedImageUI();
 });
 
-supabase.auth.onAuthStateChange((_event, session) => {
+sb.auth.onAuthStateChange((_event, session) => {
   currentUser = session?.user || null;
   renderAuthState();
 });
