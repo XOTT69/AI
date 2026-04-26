@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'edge', // Використовуємо Edge для стрімінгу
+  runtime: 'edge',
 };
 
 export default async function handler(req) {
@@ -29,11 +29,10 @@ export default async function handler(req) {
       return new Response(await response.text(), { status: response.status });
     }
 
-    // Повертаємо потік напряму на фронтенд
     return new Response(response.body, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive"
       }
     });
