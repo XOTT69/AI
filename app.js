@@ -29,11 +29,12 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
+// ЗБІЛЬШЕНО ЛІМІТ ДО 8192 ТОКЕНІВ (щоб писало максимально довго)
 const ALLOWED_MODELS = {
-  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник.", tokens: 3000 },
-  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів.", tokens: 3500 },
-  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник.", tokens: 3000 },
-  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування.", tokens: 4000 }
+  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник.", tokens: 8192 },
+  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів.", tokens: 8192 },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник.", tokens: 8192 },
+  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування.", tokens: 8192 }
 };
 
 let sb = null;
@@ -41,18 +42,18 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v29";
+const STORAGE_KEY = "ai-chat-sync-v30";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
-let hasSyncedOnLoad = false; // Прапорець, щоб не спамити базу запитами
+let hasSyncedOnLoad = false;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], theme: "dark" };
 if (!state.theme) state.theme = "dark";
 
-// --- Markdown, Підсвітка, Копіювання ---
+// --- Markdown: Підсвітка, Копіювання та ЗАВАНТАЖЕННЯ КОДУ ---
 const renderer = new marked.Renderer();
 renderer.code = function(code, language) {
   const validLang = hljs.getLanguage(language) ? language : 'plaintext';
@@ -60,7 +61,10 @@ renderer.code = function(code, language) {
   return `<div class="code-block">
             <div class="code-header">
               <span>${validLang}</span>
-              <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Скопіювати</button>
+              <div style="display:flex; gap:12px;">
+                <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Скопіювати</button>
+                <button class="copy-btn" onclick="downloadCodeBtn(this, '${validLang}')">💾 Файл</button>
+              </div>
             </div>
             <pre><code class="hljs ${validLang}">${highlighted}</code></pre>
           </div>`;
@@ -68,11 +72,35 @@ renderer.code = function(code, language) {
 marked.setOptions({ renderer: renderer, breaks: true, gfm: true });
 
 window.copyCodeBtn = function(btn) {
-  const pre = btn.parentElement.nextElementSibling;
+  const pre = btn.parentElement.parentElement.nextElementSibling;
   navigator.clipboard.writeText(pre.innerText).then(() => {
     btn.innerHTML = '✅ Скопійовано';
     setTimeout(() => btn.innerHTML = '📋 Скопіювати', 2000);
   });
+};
+
+// Функція для збереження коду як файлу
+window.downloadCodeBtn = function(btn, ext) {
+  const pre = btn.parentElement.parentElement.nextElementSibling;
+  const code = pre.innerText;
+  const blob = new Blob([code], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'code.' + (ext !== 'plaintext' ? ext : 'txt');
+  a.click();
+};
+
+// Функція для завантаження всієї відповіді як .txt
+window.downloadFullText = function(msgId) {
+  const active = getActiveChat();
+  if (!active) return;
+  const msg = active.messages.find(m => m.id === msgId);
+  if (!msg) return;
+  const blob = new Blob([msg.content], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'AI_Response.txt';
+  a.click();
 };
 
 function formatThinking(text) {
@@ -168,20 +196,16 @@ function renderChatList() {
   }
 }
 
-// --- АВТОМАТИЧНА СИНХРОНІЗАЦІЯ З SUPABASE ---
+// --- СИНХРОНІЗАЦІЯ З SUPABASE ---
 async function syncCurrentChatToCloud() {
   if (!currentUser || !sb) return;
   const active = getActiveChat();
   if (!active) return;
   try {
     await sb.from('chats').upsert({
-      id: active.id,
-      user_id: currentUser.id,
-      title: active.title,
-      messages: active.messages,
-      updated_at: new Date().toISOString()
+      id: active.id, user_id: currentUser.id, title: active.title, messages: active.messages, updated_at: new Date().toISOString()
     });
-  } catch(e) { console.error("Помилка фонової синхронізації:", e); }
+  } catch(e) { console.error("Sync Error:", e); }
 }
 
 async function loadAllChatsFromCloud() {
@@ -190,19 +214,15 @@ async function loadAllChatsFromCloud() {
     const { data, error } = await sb.from('chats').select('*').eq('user_id', currentUser.id).order('updated_at', { ascending: false });
     if (error) throw error;
     if (data && data.length > 0) {
-      // Якщо в базі є чати, замінюємо локальні
       state.chats = data.map(d => ({
         id: d.id, title: d.title, messages: d.messages || [], createdAt: new Date(d.created_at || d.updated_at).getTime()
       }));
-      // Якщо поточний чат не знайдено, беремо перший
-      if (!state.chats.find(c => c.id === state.activeChatId)) {
-        state.activeChatId = state.chats[0].id;
-      }
+      if (!state.chats.find(c => c.id === state.activeChatId)) state.activeChatId = state.chats[0].id;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       renderAll();
     }
-    hasSyncedOnLoad = true; // Більше не вантажимо при цьому сеансі
-  } catch(e) { console.error("Помилка авто-синхронізації", e); }
+    hasSyncedOnLoad = true;
+  } catch(e) { console.error("Load Error", e); }
 }
 
 window.retryMessage = function() {
@@ -237,6 +257,15 @@ function renderMessages() {
       </div>`;
     } else if (msg.role === "assistant") {
       inner.innerHTML = renderMarkdown(msg.content || "");
+      
+      // Додаємо кнопку "Завантажити як файл" для повідомлень від ШІ
+      const downloadBtn = document.createElement("button");
+      downloadBtn.className = "btn";
+      downloadBtn.innerHTML = "💾 Завантажити відповідь (.txt)";
+      downloadBtn.style.cssText = "margin-top: 12px; font-size: 12px; width: auto; padding: 6px 12px; background: transparent; border: 1px solid var(--border); color: var(--muted);";
+      downloadBtn.onclick = () => downloadFullText(msg.id);
+      inner.appendChild(downloadBtn);
+
     } else {
       inner.textContent = msg.content || "";
     }
@@ -291,10 +320,7 @@ function fileToDataUrl(file) {
   });
 }
 
-function setBusy(isBusy) {
-  requestInFlight = isBusy;
-  renderAll(); 
-}
+function setBusy(isBusy) { requestInFlight = isBusy; renderAll(); }
 
 // --- ГОЛОВНА ФУНКЦІЯ ---
 async function sendChatMessage(text, isRetry = false) {
@@ -366,6 +392,7 @@ async function sendChatMessage(text, isRetry = false) {
             if (delta) {
               assistantMsg.content += delta;
               if (targetEl) {
+                // Перемальовуємо, тимчасово ігноруючи кнопку завантаження (вона додасться в renderMessages після завершення стріму)
                 targetEl.innerHTML = renderMarkdown(assistantMsg.content);
                 chat.scrollTop = chat.scrollHeight;
               }
@@ -381,7 +408,6 @@ async function sendChatMessage(text, isRetry = false) {
       active.messages.pop(); 
       active.messages.push({ id: uid(), role: "assistant", isError: true, content: e.message });
     }
-    renderAll();
   } finally {
     currentController = null;
     saveState(); setBusy(false);
@@ -419,17 +445,16 @@ imageInput?.addEventListener("change", async () => {
 });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-// Логіка Авторизації та Синхронізації
 sb?.auth.onAuthStateChange((_event, session) => { 
   currentUser = session?.user || null; 
   renderAuthState();
-  if (currentUser) loadAllChatsFromCloud(); // Завантажуємо чати при логіні
+  if (currentUser) loadAllChatsFromCloud(); 
 });
 
 sb?.auth.getSession().then(({ data }) => { 
   currentUser = data?.session?.user || null; 
   renderAuthState();
-  if (currentUser) loadAllChatsFromCloud(); // Завантажуємо чати при перезавантаженні сторінки
+  if (currentUser) loadAllChatsFromCloud(); 
 }).catch(() => {});
 
 googleLoginBtn?.addEventListener("click", async () => {
