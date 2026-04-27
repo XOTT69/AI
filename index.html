@@ -5,31 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Моя AI Платформа</title>
   
-  <!-- Бібліотеки -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
-  <link rel="stylesheet" href="style.css"> <!-- Твій CSS -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- Оверлей для мобільних -->
   <div id="mobileOverlay" class="mobile-overlay"></div>
 
-  <!-- Бокова панель (Історія чатів) -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <button id="newChatBtn" class="btn btn-primary" style="width: 100%;">+ Новий чат</button>
     </div>
     
-    <div id="chatList" class="chat-list">
-      <!-- Список чатів генерується тут -->
-    </div>
+    <div id="chatList" class="chat-list"></div>
 
-    <!-- Авторизація Supabase -->
     <div class="sidebar-auth">
       <div id="authLoggedOut">
         <button id="googleLoginBtn" class="btn" style="width: 100%;">Увійти через Google</button>
@@ -45,33 +39,19 @@
     </div>
   </aside>
 
-  <!-- Основний контент -->
   <main class="main-content">
     <header class="header">
       <div class="header-left">
         <button id="hamburgerBtn" class="btn-icon hamburger">☰</button>
         
-        <!-- ОНОВЛЕНИЙ ВИБІР МОДЕЛЕЙ -->
+        <!-- ПРОСТИЙ, КРАСИВИЙ СЕЛЕКТ -->
         <select id="model" class="model-select">
-          <optgroup label="Блискавичні (Groq)">
-            <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
-            <option value="groq/deepseek-r1-distill-llama-70b">DeepSeek R1 (Groq)</option>
-          </optgroup>
-          
-          <optgroup label="Універсальні (Google)">
-            <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash (+Фото)</option>
-            <option value="gemini/gemini-2.5-pro">Gemini 2.5 Pro (+Фото)</option>
-          </optgroup>
-
-          <optgroup label="NVIDIA NIM">
-            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
-            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B</option>
-          </optgroup>
-
-          <optgroup label="OpenRouter (Безкоштовні)">
-            <option value="openrouter/google/gemini-2.5-pro:free">Gemini Pro (Free Router)</option>
-          </optgroup>
+          <option value="groq/llama-3.3-70b-versatile">Groq: Llama 3.3 70B (Швидка)</option>
+          <option value="gemini/gemini-2.5-flash">Google: Gemini 2.5 Flash (+Фото)</option>
+          <option value="meta/llama-3.2-90b-vision-instruct">NVIDIA: Llama 90B Vision (+Фото)</option>
+          <option value="meta/llama-3.3-70b-instruct">NVIDIA: Llama 3.3 70B</option>
         </select>
+
       </div>
 
       <div class="header-right">
@@ -81,12 +61,9 @@
       </div>
     </header>
 
-    <div id="chat" class="chat-container">
-      <!-- Повідомлення тут -->
-    </div>
+    <div id="chat" class="chat-container"></div>
 
     <div class="input-area">
-      <!-- Панель прикріпленого фото -->
       <div id="selectedImageBar" class="selected-image-bar hidden">
         <img id="selectedImagePreview" src="" alt="preview">
         <span id="selectedImageName"></span>
