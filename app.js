@@ -26,35 +26,25 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
 
-let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
-let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
+let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; // Твоя URL
+let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF"; // Твій Key
 
+// ОНОВЛЕНИЙ СПИСОК МОДЕЛЕЙ ДЛЯ БЕКЕНДУ
 const ALLOWED_MODELS = {
-  "meta/llama-3.3-70b-instruct": {
-    system: "Ти швидкий і точний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "qwen/qwen3.5-122b-a10b": {
-    system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "meta/llama-3.2-90b-vision-instruct": {
-    system: "Ти AI-помічник для аналізу зображень. Відповідай українською.",
-    tokens: 2048,
-    vision: true
-  },
-  "google/gemma-3-27b-it": {
-    system: "Ти мультимодальний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: true
-  },
-  "abacusai/dracarys-llama-3.1-70b-instruct": {
-    system: "Ти AI-помічник для програмування. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  }
+  // --- GROQ ---
+  "groq/llama-3.3-70b-versatile": { system: "Ти блискавичний AI-помічник. Відповідай українською.", tokens: 8192, vision: false },
+  "groq/deepseek-r1-distill-llama-70b": { system: "Ти надзвичайно розумний AI (DeepSeek). Відповідай українською.", tokens: 8192, vision: false },
+  
+  // --- GOOGLE GEMINI ---
+  "gemini/gemini-2.5-flash": { system: "Ти сучасний AI-помічник Gemini. Відповідай українською.", tokens: 8192, vision: true },
+  "gemini/gemini-2.5-pro": { system: "Ти просунутий AI-помічник Gemini Pro для складних задач.", tokens: 8192, vision: true },
+
+  // --- OPENROUTER ---
+  "openrouter/google/gemini-2.5-pro:free": { system: "Ти безкоштовний Gemini Pro через OpenRouter.", tokens: 4096, vision: true },
+
+  // --- NVIDIA NIM ---
+  "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
+  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
 };
 
 let sb = null;
@@ -62,7 +52,7 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v40";
+const STORAGE_KEY = "ai-chat-sync-v41"; // Оновив версію кешу
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -72,8 +62,7 @@ let syncTimeout = null;
 
 let state = JSON.parse(
   localStorage.getItem(STORAGE_KEY) ||
-  localStorage.getItem("ai-chat-sync-v39") ||
-  localStorage.getItem("ai-chat-sync-v32") ||
+  localStorage.getItem("ai-chat-sync-v40") ||
   "null"
 );
 
@@ -82,6 +71,7 @@ if (!state || !Array.isArray(state.chats)) {
 }
 if (!state.theme) state.theme = "dark";
 
+// Налаштування Markdown
 const renderer = new marked.Renderer();
 renderer.code = function(code, language) {
   const validLang = hljs.getLanguage(language) ? language : "plaintext";
@@ -108,7 +98,7 @@ window.copyCodeBtn = function(btn) {
 
 function formatThinking(text) {
   if (!text) return "";
-  let processed = text.replace(/<think>/g, '<details class="thought-block"><summary>Думка</summary><div class="thought-content">');
+  let processed = text.replace(/<think>/g, '<details class="thought-block" open><summary>Процес мислення</summary><div class="thought-content">');
   processed = processed.replace(/<\/think>/g, "</div></details>");
   return processed;
 }
@@ -186,7 +176,6 @@ function renderAuthState() {
 
 function renderChatList() {
   if (!chatList) return;
-
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
@@ -218,8 +207,8 @@ function renderChatList() {
       state.activeChatId = item.id;
       saveState();
       renderAll();
-      sidebar.classList.remove("open");
-      mobileOverlay.classList.remove("show");
+      sidebar?.classList.remove("open");
+      mobileOverlay?.classList.remove("show");
     };
 
     chatList.appendChild(div);
@@ -233,7 +222,7 @@ function renderMessages() {
   chat.innerHTML = "";
 
   if (!active.messages.length) {
-    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`;
+    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти? Оберіть модель зверху та почніть діалог.</div>`;
     return;
   }
 
@@ -406,7 +395,7 @@ async function sendChatMessage(text, isRetry = false) {
       active.messages = active.messages.slice(-50);
     }
 
-    promptInput.value = "";
+    if (promptInput) promptInput.value = "";
     autoResize();
     saveState();
   }
@@ -422,8 +411,8 @@ async function sendChatMessage(text, isRetry = false) {
   renderAll();
   setBusy(true, "Генерація...");
 
-  const modelId = modelSelect?.value || "meta/llama-3.3-70b-instruct";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["meta/llama-3.3-70b-instruct"];
+  const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
+  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
 
   if (selectedImage && !modelConf.vision && !isRetry) {
     active.messages.pop();
@@ -431,7 +420,7 @@ async function sendChatMessage(text, isRetry = false) {
       id: uid(),
       role: "assistant",
       isError: true,
-      content: "Для фото обери vision-модель: Llama 3.2 90B Vision або Gemma 3."
+      content: "Ця модель не підтримує розпізнавання фото. Оберіть модель з позначкою (+Фото) або Vision."
     });
     renderAll();
     setBusy(false, "Помилка");
@@ -453,7 +442,7 @@ async function sendChatMessage(text, isRetry = false) {
         content: [
           {
             type: "text",
-            text: (m.content || "Що на цьому зображенні?").trim()
+            text: (m.content || "Опиши це зображення").trim()
           },
           {
             type: "image_url",
@@ -492,14 +481,12 @@ async function sendChatMessage(text, isRetry = false) {
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       let message = `HTTP ${response.status}`;
-
       try {
         const parsed = JSON.parse(raw);
         message += parsed?.details ? `: ${parsed.details}` : parsed?.error ? `: ${parsed.error}` : "";
       } catch {
         if (raw) message += `: ${raw}`;
       }
-
       throw new Error(message);
     }
 
@@ -561,6 +548,7 @@ async function sendChatMessage(text, isRetry = false) {
   }
 }
 
+// Події
 themeToggleBtn?.addEventListener("click", () => {
   state.theme = state.theme === "light" ? "dark" : "light";
   saveState();
@@ -568,13 +556,13 @@ themeToggleBtn?.addEventListener("click", () => {
 });
 
 hamburgerBtn?.addEventListener("click", () => {
-  sidebar.classList.add("open");
-  mobileOverlay.classList.add("show");
+  sidebar?.classList.add("open");
+  mobileOverlay?.classList.add("show");
 });
 
 mobileOverlay?.addEventListener("click", () => {
-  sidebar.classList.remove("open");
-  mobileOverlay.classList.remove("show");
+  sidebar?.classList.remove("open");
+  mobileOverlay?.classList.remove("show");
 });
 
 form?.addEventListener("submit", (e) => {
@@ -608,8 +596,8 @@ newChatBtn?.addEventListener("click", () => {
   state.activeChatId = null;
   ensureChat();
   renderAll();
-  sidebar.classList.remove("open");
-  mobileOverlay.classList.remove("show");
+  sidebar?.classList.remove("open");
+  mobileOverlay?.classList.remove("show");
 });
 
 imageBtn?.addEventListener("click", () => imageInput?.click());
@@ -669,6 +657,7 @@ logoutBtn?.addEventListener("click", async () => {
   renderAuthState();
 });
 
+// Ініціалізація
 applyTheme();
 renderAll();
 autoResize();
