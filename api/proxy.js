@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', // Edge-середовище Vercel для ідеального стрімінгу
 };
 
 export default async function handler(req) {
