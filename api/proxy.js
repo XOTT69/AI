@@ -6,6 +6,10 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
+const NVIDIA_MODEL_MAP = {
+  "google/gemma-3-27b-it": "google/gemma-3-27b-it"
+};
+
 function getProviderConfig(model) {
   if (!model || typeof model !== "string") {
     throw new Error("Model is required");
@@ -29,12 +33,16 @@ function getProviderConfig(model) {
     };
   }
 
-  return {
-    provider: "nvidia",
-    apiKey: process.env.NVIDIA_API_KEY,
-    url: "https://integrate.api.nvidia.com/v1/chat/completions",
-    model: model.replace(/^[^/]+\//, "")
-  };
+  if (NVIDIA_MODEL_MAP[model]) {
+    return {
+      provider: "nvidia",
+      apiKey: process.env.NVIDIA_API_KEY,
+      url: "https://integrate.api.nvidia.com/v1/chat/completions",
+      model: NVIDIA_MODEL_MAP[model]
+    };
+  }
+
+  throw new Error(`Модель не підтримується цим proxy: ${model}`);
 }
 
 function sanitizeMessages(messages) {
