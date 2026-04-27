@@ -16,7 +16,6 @@ const removeImageBtn = document.getElementById("removeImageBtn");
 const statusText = document.getElementById("statusText");
 const googleLoginBtn = document.getElementById("googleLoginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
-const syncBtn = document.getElementById("syncBtn");
 const authLoggedOut = document.getElementById("authLoggedOut");
 const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
@@ -47,6 +46,7 @@ let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
+let hasSyncedOnLoad = false; // Прапорець, щоб не спамити базу запитами
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], theme: "dark" };
@@ -92,7 +92,6 @@ function renderMarkdown(text) {
 // --- БАЗОВІ ФУНКЦІЇ ---
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
-// Debounce для збереження, щоб не тормозило при довгому чаті
 function debounce(func, wait) {
   let timeout;
   return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func(...args), wait); };
@@ -100,7 +99,7 @@ function debounce(func, wait) {
 
 const saveState = debounce(() => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  syncCurrentChatToCloud(); // Авто-синхронізація активного чату
+  syncCurrentChatToCloud(); 
 }, 1000);
 
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
@@ -169,7 +168,7 @@ function renderChatList() {
   }
 }
 
-// --- СИНХРОНІЗАЦІЯ З SUPABASE ---
+// --- АВТОМАТИЧНА СИНХРОНІЗАЦІЯ З SUPABASE ---
 async function syncCurrentChatToCloud() {
   if (!currentUser || !sb) return;
   const active = getActiveChat();
@@ -186,36 +185,30 @@ async function syncCurrentChatToCloud() {
 }
 
 async function loadAllChatsFromCloud() {
-  if (!currentUser || !sb) return;
+  if (!currentUser || !sb || hasSyncedOnLoad) return;
   try {
-    const originalText = syncBtn.textContent;
-    syncBtn.textContent = "Завантаження...";
-    
     const { data, error } = await sb.from('chats').select('*').eq('user_id', currentUser.id).order('updated_at', { ascending: false });
-    
     if (error) throw error;
     if (data && data.length > 0) {
+      // Якщо в базі є чати, замінюємо локальні
       state.chats = data.map(d => ({
         id: d.id, title: d.title, messages: d.messages || [], createdAt: new Date(d.created_at || d.updated_at).getTime()
       }));
-      state.activeChatId = state.chats[0].id;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); // Миттєве збереження
+      // Якщо поточний чат не знайдено, беремо перший
+      if (!state.chats.find(c => c.id === state.activeChatId)) {
+        state.activeChatId = state.chats[0].id;
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       renderAll();
     }
-    syncBtn.textContent = originalText;
-  } catch(e) { 
-    console.error("Sync error", e);
-    syncBtn.textContent = "Помилка (Див. консоль)";
-    setTimeout(() => syncBtn.textContent = "🔄 Синхронізувати", 3000);
-  }
+    hasSyncedOnLoad = true; // Більше не вантажимо при цьому сеансі
+  } catch(e) { console.error("Помилка авто-синхронізації", e); }
 }
-
-syncBtn?.addEventListener("click", loadAllChatsFromCloud);
 
 window.retryMessage = function() {
   const active = getActiveChat();
   if (!active) return;
-  active.messages.pop(); // Видаляємо помилку
+  active.messages.pop(); 
   const lastUserMsg = active.messages[active.messages.length - 1];
   if (lastUserMsg) sendChatMessage(lastUserMsg.content, true);
 };
@@ -272,7 +265,7 @@ function renderAll() {
 function autoResize() {
   if (!promptInput) return;
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + "px";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + "px";
 }
 
 function updateSelectedImageUI() {
@@ -311,7 +304,7 @@ async function sendChatMessage(text, isRetry = false) {
   if (!isRetry) {
     active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage, createdAt: Date.now() });
     if (active.messages.length === 1) active.title = text.slice(0, 30) || "Новий чат";
-    if (active.messages.length > 50) active.messages = active.messages.slice(-50); // Ліміт контексту
+    if (active.messages.length > 50) active.messages = active.messages.slice(-50); 
     promptInput.value = ""; autoResize(); clearSelectedImage();
   }
 
@@ -426,8 +419,18 @@ imageInput?.addEventListener("change", async () => {
 });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-sb?.auth.onAuthStateChange((_event, session) => { currentUser = session?.user || null; renderAuthState(); });
-sb?.auth.getSession().then(({ data }) => { currentUser = data?.session?.user || null; renderAuthState(); }).catch(() => {});
+// Логіка Авторизації та Синхронізації
+sb?.auth.onAuthStateChange((_event, session) => { 
+  currentUser = session?.user || null; 
+  renderAuthState();
+  if (currentUser) loadAllChatsFromCloud(); // Завантажуємо чати при логіні
+});
+
+sb?.auth.getSession().then(({ data }) => { 
+  currentUser = data?.session?.user || null; 
+  renderAuthState();
+  if (currentUser) loadAllChatsFromCloud(); // Завантажуємо чати при перезавантаженні сторінки
+}).catch(() => {});
 
 googleLoginBtn?.addEventListener("click", async () => {
   if (!sb) { alert("Supabase не підключено"); return; }
@@ -436,7 +439,7 @@ googleLoginBtn?.addEventListener("click", async () => {
 
 logoutBtn?.addEventListener("click", async () => {
   if (!sb) return;
-  await sb.auth.signOut(); currentUser = null; renderAuthState();
+  await sb.auth.signOut(); currentUser = null; hasSyncedOnLoad = false; renderAuthState();
 });
 
 applyTheme(); renderAll(); autoResize(); updateSelectedImageUI();
