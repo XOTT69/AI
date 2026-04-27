@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Моя AI Платформа</title>
   
+  <!-- Бібліотеки -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -15,15 +16,20 @@
 </head>
 <body>
 
+  <!-- Оверлей для мобільних -->
   <div id="mobileOverlay" class="mobile-overlay"></div>
 
+  <!-- Бокова панель (Історія чатів) -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <button id="newChatBtn" class="btn btn-primary" style="width: 100%;">+ Новий чат</button>
     </div>
     
-    <div id="chatList" class="chat-list"></div>
+    <div id="chatList" class="chat-list">
+      <!-- Список чатів генерується тут -->
+    </div>
 
+    <!-- Авторизація Supabase -->
     <div class="sidebar-auth">
       <div id="authLoggedOut">
         <button id="googleLoginBtn" class="btn" style="width: 100%;">Увійти через Google</button>
@@ -39,31 +45,38 @@
     </div>
   </aside>
 
+  <!-- Основний контент -->
   <main class="main-content">
     <header class="header">
       <div class="header-left">
         <button id="hamburgerBtn" class="btn-icon hamburger">☰</button>
         
-        <!-- ПРОСТИЙ, КРАСИВИЙ СЕЛЕКТ -->
+        <!-- ВИПРАВЛЕНИЙ СЕЛЕКТ (Усі моделі повернуті) -->
         <select id="model" class="model-select">
-          <option value="groq/llama-3.3-70b-versatile">Groq: Llama 3.3 70B (Швидка)</option>
-          <option value="gemini/gemini-2.5-flash">Google: Gemini 2.5 Flash (+Фото)</option>
-          <option value="meta/llama-3.2-90b-vision-instruct">NVIDIA: Llama 90B Vision (+Фото)</option>
-          <option value="meta/llama-3.3-70b-instruct">NVIDIA: Llama 3.3 70B</option>
+          <option value="openrouter/deepseek/deepseek-r1:free">DeepSeek R1 (Найрозумніша)</option>
+          <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B</option>
+          <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B</option>
+          <option value="google/gemma-3-27b-it">Gemma 3 (+Фото)</option>
+          <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B (Швидка)</option>
+          <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash (+Фото)</option>
+          <option value="meta/llama-3.2-90b-vision-instruct">Llama 90B Vision (+Фото)</option>
+          <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B (NVIDIA)</option>
         </select>
-
       </div>
 
       <div class="header-right">
         <span id="statusText" class="status-text">Готово</span>
-        <button id="themeToggleBtn" class="btn-icon">☀️</button>
+        <button id="themeToggleBtn" class="btn-icon" title="Перемикач теми">☀️</button>
         <button id="clearBtn" class="btn-icon" title="Очистити чат">🗑️</button>
       </div>
     </header>
 
-    <div id="chat" class="chat-container"></div>
+    <div id="chat" class="chat-container">
+      <!-- Повідомлення тут -->
+    </div>
 
     <div class="input-area">
+      <!-- Панель прикріпленого фото -->
       <div id="selectedImageBar" class="selected-image-bar hidden">
         <img id="selectedImagePreview" src="" alt="preview">
         <span id="selectedImageName"></span>
