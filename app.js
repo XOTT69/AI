@@ -29,11 +29,13 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
+// --- ТУТ ДОДАНА НОВА МОДЕЛЬ VISION ВІД META (LLAMA 3.2 90B VISION) ---
 const ALLOWED_MODELS = {
-  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник.", tokens: 8192 },
-  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів.", tokens: 8192 },
-  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник.", tokens: 8192 },
-  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування.", tokens: 8192 }
+  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник.", tokens: 8192, vision: false },
+  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів.", tokens: 8192, vision: false },
+  "meta/llama-3.2-90b-vision-instruct": { system: "Ти крутий AI-помічник, що розпізнає зображення.", tokens: 4000, vision: true },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник.", tokens: 8192, vision: true },
+  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування.", tokens: 8192, vision: false }
 };
 
 let sb = null;
@@ -41,15 +43,14 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v31";
+const STORAGE_KEY = "ai-chat-sync-v32"; // Оновив ключ кешу
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
 let hasSyncedOnLoad = false;
 
-// Підтягуємо історію зі старої або нової версії
-let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem("ai-chat-sync-v30") || "null");
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem("ai-chat-sync-v31") || "null");
 if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], theme: "dark" };
 if (!state.theme) state.theme = "dark";
 
@@ -108,11 +109,10 @@ function uid() { return Math.random().toString(36).slice(2) + Date.now().toStrin
 let syncTimeout = null;
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); // Зберігається МИТТЄВО
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); 
   } catch(e) {
     if(state.chats.length > 20) { state.chats = state.chats.slice(0, 20); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
   }
-  // В хмару відправляємо з затримкою, щоб не спамити API
   clearTimeout(syncTimeout);
   syncTimeout = setTimeout(syncCurrentChatToCloud, 2000);
 }
@@ -262,24 +262,41 @@ async function sendChatMessage(text, isRetry = false) {
     if (active.messages.length === 1) active.title = text.slice(0, 30) || "Новий чат";
     if (active.messages.length > 50) active.messages = active.messages.slice(-50); 
     promptInput.value = ""; autoResize(); clearSelectedImage();
-    saveState(); // МИТТЄВО ЗБЕРІГАЄМО ПОВІДОМЛЕННЯ ЮЗЕРА
+    saveState(); 
   }
 
   const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
   active.messages.push(assistantMsg);
   renderAll(); setBusy(true);
 
-  const modelId = modelSelect?.value || "meta/llama-3.3-70b-instruct";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["meta/llama-3.3-70b-instruct"];
+  let modelId = modelSelect?.value || "meta/llama-3.3-70b-instruct";
+  let modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["meta/llama-3.3-70b-instruct"];
+  
+  // ЯКЩО Є ФОТО, АЛЕ ОБРАНА МОДЕЛЬ БЕЗ VISION - ПРИМУСОВО ПЕРЕМИКАЄМО НА VISION-МОДЕЛЬ
+  const lastUserMsg = active.messages[active.messages.length - 2];
+  if (lastUserMsg?.image && !modelConf.vision) {
+    modelId = "meta/llama-3.2-90b-vision-instruct";
+    modelConf = ALLOWED_MODELS[modelId];
+    if (modelSelect) modelSelect.value = modelId;
+  }
   
   let safeMessages = [{ role: "system", content: modelConf.system }];
   const recent = active.messages.slice(-15).filter(m => m.id !== assistantMsg.id && !m.isError);
 
-  if (selectedImage?.dataUrl && modelId.includes("gemma-3")) {
-    safeMessages.push({ role: "user", content: [{ type: "text", text: text || "Що на фото?" }, { type: "image_url", image_url: { url: selectedImage.dataUrl } }] });
-  } else {
-    recent.forEach(m => { safeMessages.push({ role: m.role, content: m.content }); });
-  }
+  // --- ІДЕАЛЬНИЙ ПАРСИНГ ФОТО ДЛЯ NVIDIA NIM ---
+  recent.forEach(m => { 
+    if (m.role === "user" && m.image?.dataUrl) {
+      safeMessages.push({ 
+        role: "user", 
+        content: [
+          { type: "text", text: m.content || "Опиши це зображення." }, 
+          { type: "image_url", image_url: { url: m.image.dataUrl } }
+        ] 
+      });
+    } else {
+      safeMessages.push({ role: m.role, content: m.content }); 
+    }
+  });
 
   const controller = new AbortController(); currentController = controller;
 
@@ -288,7 +305,7 @@ async function sendChatMessage(text, isRetry = false) {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
       body: JSON.stringify({ model: modelId, messages: safeMessages, temperature: 0.3, max_tokens: modelConf.tokens, top_p: 0.9, stream: true })
     });
-    if (!response.ok) throw new Error(`${response.status}`);
+    if (!response.ok) throw new Error(`${response.status} - Переконайтесь, що API-ключ дійсний.`);
 
     const reader = response.body.getReader(); const decoder = new TextDecoder("utf-8"); let buffer = "";
     const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content"); const targetEl = msgEls[msgEls.length - 1];
@@ -315,9 +332,7 @@ async function sendChatMessage(text, isRetry = false) {
     if (e?.name === "AbortError") { assistantMsg.content += "\n\n*[Зупинено]*"; } 
     else { active.messages.pop(); active.messages.push({ id: uid(), role: "assistant", isError: true, content: e.message }); }
   } finally {
-    currentController = null;
-    saveState(); // МИТТЄВО ЗБЕРІГАЄМО ПОВІДОМЛЕННЯ АСИСТЕНТА ПІСЛЯ ЗАВЕРШЕННЯ
-    setBusy(false);
+    currentController = null; saveState(); setBusy(false);
   }
 }
 
