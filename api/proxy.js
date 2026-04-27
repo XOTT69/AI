@@ -6,11 +6,17 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
-// NVIDIA підтримує лише ці 3 з твого списку
+// 1. Карта моделей для NVIDIA
 const NVIDIA_MODEL_MAP = {
   "google/gemma-3-27b-it": "google/gemma-3-27b-it",
   "meta/llama-3.2-90b-vision-instruct": "meta/llama-3.2-90b-vision-instruct",
   "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct"
+};
+
+// 2. Карта моделей для OpenRouter (щоб точно працювало)
+const OPENROUTER_MODEL_MAP = {
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct", // Замінив на стабільний Qwen, бо 122b-a10b міг зникнути
+  "abacusai/dracarys-llama-3.1-70b-instruct": "abacusai/dracarys-llama-3.1-70b-instruct" 
 };
 
 function getProviderConfig(model) {
@@ -18,7 +24,7 @@ function getProviderConfig(model) {
     throw new Error("Model is required");
   }
 
-  // 1. GROQ
+  // GROQ
   if (model.startsWith("groq/")) {
     return {
       provider: "groq",
@@ -28,7 +34,7 @@ function getProviderConfig(model) {
     };
   }
 
-  // 2. GEMINI
+  // GEMINI
   if (model.startsWith("gemini/")) {
     return {
       provider: "gemini",
@@ -38,17 +44,17 @@ function getProviderConfig(model) {
     };
   }
 
-  // 3. OPENROUTER (Сюди йдуть Qwen та Dracarys)
-  if (model.startsWith("qwen/") || model.startsWith("abacusai/")) {
+  // OPENROUTER
+  if (OPENROUTER_MODEL_MAP[model]) {
     return {
       provider: "openrouter",
       apiKey: process.env.OPENROUTER_API_KEY,
       url: "https://openrouter.ai/api/v1/chat/completions",
-      model: model // OpenRouter приймає назву прямо так, наприклад "qwen/qwen3.5-122b-a10b"
+      model: OPENROUTER_MODEL_MAP[model] 
     };
   }
 
-  // 4. NVIDIA
+  // NVIDIA
   if (NVIDIA_MODEL_MAP[model]) {
     return {
       provider: "nvidia",
@@ -140,6 +146,17 @@ export default async function handler(req, res) {
       stream
     };
 
+    // OpenRouter вимагає заголовок HTTP-Referer
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${cfg.apiKey}`
+    };
+    
+    if (cfg.provider === "openrouter") {
+       headers["HTTP-Referer"] = "https://ai-chat.com"; 
+       headers["X-Title"] = "AI Chat";
+    }
+
     if (cfg.provider === "groq") {
       payload.max_completion_tokens = max_tokens;
     } else {
@@ -148,10 +165,7 @@ export default async function handler(req, res) {
 
     const upstream = await fetch(cfg.url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${cfg.apiKey}`
-      },
+      headers: headers,
       body: JSON.stringify(payload)
     });
 
