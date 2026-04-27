@@ -8,7 +8,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  
+  <!-- Підсвітка коду -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
   
   <style>
     /* ТЕМНА ТЕМА */
@@ -46,150 +49,37 @@
     * { box-sizing: border-box; }
     
     html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--text);
+      margin: 0; padding: 0; background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100dvh;
-      overflow: hidden;
-      transition: background 0.3s, color 0.3s;
+      height: 100dvh; overflow: hidden; transition: background 0.3s, color 0.3s;
     }
 
-    .app-container {
-      display: flex;
-      height: 100dvh;
-      width: 100vw;
-    }
+    .app-container { display: flex; height: 100dvh; width: 100vw; }
 
-    /* БОКОВА ПАНЕЛЬ (SIDEBAR) */
+    /* БОКОВА ПАНЕЛЬ */
     .sidebar {
-      width: 280px;
-      background: var(--sidebar);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
+      width: 280px; background: var(--sidebar); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0;
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
-      z-index: 100;
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      z-index: 100; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
     }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 
-    .sidebar-header {
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+    .sidebar-settings { padding: 12px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border); }
+    .control-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 14px; outline: none; width: 100%; }
+    .mode-toggles { display: flex; background: var(--panel); border-radius: 8px; padding: 2px; border: 1px solid var(--border); flex: 1; }
+    .mode-btn { background: transparent; border: none; color: var(--muted); padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; flex: 1; }
+    .mode-btn.active { background: var(--panel-2); color: var(--text); }
+    .checkbox-label { font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); cursor: pointer; background: var(--panel); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); }
 
-    /* НАЛАШТУВАННЯ У МЕНЮ (ПК і ТЕЛЕФОН) */
-    .sidebar-settings {
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .control-btn {
-      background: var(--panel);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
-      outline: none;
-      width: 100%;
-    }
-
-    .mode-toggles {
-      display: flex;
-      background: var(--panel);
-      border-radius: 8px;
-      padding: 2px;
-      border: 1px solid var(--border);
-      flex: 1;
-    }
-
-    .mode-btn {
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 13px;
-      cursor: pointer;
-      flex: 1;
-    }
-
-    .mode-btn.active {
-      background: var(--panel-2);
-      color: var(--text);
-    }
-
-    .checkbox-label {
-      font-size: 13px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      color: var(--muted);
-      cursor: pointer;
-      background: var(--panel);
-      padding: 6px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-    }
-
-    /* СПИСОК ЧАТІВ */
-    .chat-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .chat-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      border-radius: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: background 0.2s;
-    }
-
+    .chat-list { flex: 1; overflow-y: auto; padding: 10px; -webkit-overflow-scrolling: touch; }
+    .chat-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; transition: background 0.2s; }
     .chat-item:hover { background: var(--hover); }
     .chat-item.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.5); }
-
     .chat-item-info { flex: 1; overflow: hidden; }
-
-    .chat-item-title {
-      font-weight: 600;
-      font-size: 14px;
-      margin-bottom: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
+    .chat-item-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-item-meta { color: var(--muted); font-size: 12px; }
-
-    .chat-item-delete {
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      font-size: 14px;
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 6px;
-      display: none; 
-    }
-    
+    .chat-item-delete { background: transparent; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 8px; border-radius: 6px; display: none; }
     .chat-item:hover .chat-item-delete { display: block; color: var(--danger-text); }
     .chat-item-delete:hover { background: var(--danger-bg); }
 
@@ -200,135 +90,71 @@
     .user-name { font-size: 14px; font-weight: 600; }
     .user-email { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* ГОЛОВНА ЗОНА (MAIN) */
-    .main-content {
-      flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative;
-    }
-
-    /* ВЕРХНЯ ПАНЕЛЬ (TOPBAR) */
-    .topbar {
-      padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px;
-      background: var(--topbar);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between; z-index: 10; flex-shrink: 0;
-      transition: background 0.3s;
-    }
-
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .hamburger-btn {
-      display: none; background: transparent; border: none; color: var(--text);
-      font-size: 26px; padding: 6px; margin-left: -6px; cursor: pointer;
-    }
-
+    /* ГОЛОВНА ЗОНА */
+    .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+    .topbar { padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px; background: var(--topbar); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; z-index: 10; flex-shrink: 0; transition: background 0.3s; }
+    .topbar-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .hamburger-btn { display: none; background: transparent; border: none; color: var(--text); font-size: 26px; padding: 6px; margin-left: -6px; cursor: pointer; }
     .chat-header-info { flex: 1; min-width: 0; }
     .chat-header-info h3 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status-indicator { font-size: 12px; color: var(--muted); }
+    .clear-chat-icon { background: transparent; border: none; color: var(--danger-text); font-size: 18px; cursor: pointer; padding: 8px; border-radius: 8px; }
+    .clear-chat-icon:hover { background: var(--danger-bg); }
 
-    .clear-chat-icon {
-      background: transparent;
-      border: none;
-      color: var(--danger-text);
-      font-size: 18px;
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 8px;
-    }
-
-    .clear-chat-icon:hover {
-      background: var(--danger-bg);
-    }
-
-    /* ЧАТ (ПОВІДОМЛЕННЯ) */
-    .chat-container {
-      flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column;
-      gap: 16px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch;
-    }
-
+    /* ЧАТ ТА ПОВІДОМЛЕННЯ */
+    .chat-container { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
     .chat-empty { text-align: center; color: var(--muted); margin-top: 40px; font-size: 14px; }
     .message { display: flex; width: 100%; }
     .message.user { justify-content: flex-end; }
     .message.assistant { justify-content: flex-start; }
-
-    .message-content {
-      max-width: 85%; padding: 12px 16px; border-radius: 18px;
-      font-size: 15px; line-height: 1.5; word-break: break-word;
-    }
-
+    .message-content { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-break: break-word; }
     .message.user .message-content { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
     .message.assistant .message-content { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
     .message-content p { margin: 0 0 10px 0; }
     .message-content p:last-child { margin: 0; }
     .inline-preview-image { max-width: 100%; border-radius: 8px; margin-top: 8px; }
 
-    /* ПОЛЕ ВВОДУ (INPUT) */
-    .input-area {
-      padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border);
-      flex-shrink: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-      transition: background 0.3s;
-    }
+    /* НОВЕ: БЛОК ПОМИЛКИ ТА КНОПКА ПОВТОРУ */
+    .error-block { background: var(--danger-bg) !important; border-color: var(--danger-text) !important; color: var(--text); }
+    
+    /* НОВЕ: КОПІЮВАННЯ КОДУ ТА ПІДСВІТКА */
+    .code-block { position: relative; margin: 12px 0; }
+    .code-block pre { margin: 0; border-radius: 12px; padding: 16px; background: #0d1117; overflow-x: auto; border: 1px solid rgba(255,255,255,0.1); }
+    .copy-btn { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.1); border: none; color: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; z-index: 5; transition: background 0.2s; }
+    .copy-btn:hover { background: rgba(255,255,255,0.25); }
 
-    .selected-image-bar {
-      display: flex; align-items: center; gap: 12px; padding: 8px 12px;
-      background: var(--panel); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border);
-    }
+    /* НОВЕ: ПРОЦЕС ДУМКИ (THINKING) */
+    .thought-block { background: rgba(0,0,0,0.15); border-left: 3px solid var(--muted); padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+    [data-theme="light"] .thought-block { background: rgba(0,0,0,0.03); }
+    .thought-block summary { cursor: pointer; font-weight: 600; color: var(--text); user-select: none; outline: none; list-style: none; display: flex; align-items: center; gap: 6px; }
+    .thought-block summary::-webkit-details-marker { display: none; }
+    .thought-block summary::before { content: '▶'; font-size: 10px; transition: transform 0.2s; }
+    .thought-block[open] summary::before { transform: rotate(90deg); }
+    .thought-content { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 
+    /* ПОЛЕ ВВОДУ */
+    .input-area { padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transition: background 0.3s; }
+    .selected-image-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--panel); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border); }
     .selected-image-bar img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
     .image-info { flex: 1; }
     .image-info span { display: block; font-size: 14px; }
     .image-info small { color: var(--muted); font-size: 12px; }
-
-    .input-form {
-      display: flex; align-items: flex-end; gap: 8px; background: var(--panel);
-      border: 1px solid var(--border); border-radius: 20px; padding: 6px;
-      max-width: 900px; margin: 0 auto;
-    }
-
-    .btn-icon {
-      background: transparent; border: none; color: var(--muted); font-size: 20px;
-      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 50%;
-    }
+    .input-form { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 6px; max-width: 900px; margin: 0 auto; }
+    .btn-icon { background: transparent; border: none; color: var(--muted); font-size: 20px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 50%; }
     .btn-icon:hover { background: var(--panel-2); color: var(--text); }
-
-    .input-form textarea {
-      flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit;
-      font-size: 15px; resize: none; padding: 8px 4px; max-height: 120px; outline: none;
-    }
-
-    .send-btn {
-      background: var(--accent); color: white; border: none; width: 36px; height: 36px;
-      border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;
-    }
+    .input-form textarea { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 15px; resize: none; padding: 8px 4px; max-height: 120px; outline: none; }
+    .send-btn { background: var(--accent); color: white; border: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
     .send-btn:disabled { background: var(--panel-2); color: var(--muted); }
-
-    .btn {
-      background: var(--panel-2); color: var(--text); border: none; padding: 10px 16px;
-      border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%;
-    }
+    .btn { background: var(--panel-2); color: var(--text); border: none; padding: 10px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; }
     .btn.primary { background: var(--accent); color: white; }
     
     .text-danger { color: var(--danger-text) !important; }
     .hidden { display: none !important; }
-
-    .mobile-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6);
-      z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.3s;
-    }
+    .mobile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .mobile-overlay.show { opacity: 1; pointer-events: auto; }
 
-    /* МOБІЛЬНА АДАПТАЦІЯ */
     @media (max-width: 768px) {
-      .sidebar {
-        position: fixed; top: 0; left: 0; height: 100dvh;
-        transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5);
-      }
+      .sidebar { position: fixed; top: 0; left: 0; height: 100dvh; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
       .message-content { max-width: 92%; }
@@ -341,14 +167,12 @@
   <div class="mobile-overlay" id="mobileOverlay"></div>
 
   <div class="app-container">
-    <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h2 style="margin:0; font-size: 18px;">Мої Чати</h2>
         <button type="button" class="btn-icon" id="closeSidebarBtn" style="display: none;">✕</button>
       </div>
 
-      <!-- НАЛАШТУВАННЯ + ПЕРЕМИКАЧ ТЕМИ (ЄДИНІ ДЛЯ ПК І ТЕЛЕФОНУ) -->
       <div class="sidebar-settings">
         <div style="display: flex; gap: 8px; margin-bottom: 4px;">
           <button type="button" class="btn primary" id="newChatBtn" style="margin: 0; flex: 1;">Новий чат</button>
@@ -373,14 +197,12 @@
         </div>
       </div>
 
-      <!-- СПИСОК ЧАТІВ -->
       <div class="chat-list" id="chatList"></div>
 
       <div class="sidebar-footer">
         <div id="authLoggedOut">
           <button type="button" class="btn" id="googleLoginBtn">Увійти (Google)</button>
         </div>
-
         <div id="authLoggedIn" class="hidden">
           <div class="user-info">
             <img id="userAvatar" src="https://placehold.co/40x40/png" alt="Avatar">
@@ -394,7 +216,6 @@
       </div>
     </aside>
 
-    <!-- MAIN CHAT AREA -->
     <main class="main-content">
       <header class="topbar">
         <div class="topbar-left">
@@ -404,8 +225,6 @@
             <span class="status-indicator" id="statusText">Готово</span>
           </div>
         </div>
-        
-        <!-- Кнопка очищення чату (Іконка кошика) -->
         <button type="button" class="clear-chat-icon" id="clearBtn" title="Очистити чат">🗑️</button>
       </header>
 
