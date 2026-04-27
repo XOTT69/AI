@@ -1,72 +1,188 @@
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs"
 };
 
-export default async function handler(req) {
+function json(res, status, data) {
+  return res.status(status).json(data);
+}
+
+function getProviderConfig(model) {
+  if (!model || typeof model !== "string") {
+    throw new Error("Model is required");
+  }
+
+  if (model.startsWith("groq/")) {
+    return {
+      provider: "groq",
+      apiKey: process.env.GROQ_API_KEY,
+      url: "https://api.groq.com/openai/v1/chat/completions",
+      model: model.replace(/^groq\//, "")
+    };
+  }
+
+  if (model.startsWith("gemini/")) {
+    return {
+      provider: "gemini",
+      apiKey: process.env.GEMINI_API_KEY,
+      url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      model: model.replace(/^gemini\//, "")
+    };
+  }
+
+  return {
+    provider: "nvidia",
+    apiKey: process.env.NVIDIA_API_KEY,
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    model: model.replace(/^[^/]+\//, "")
+  };
+}
+
+function sanitizeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .filter(m => m && typeof m === "object" && m.role)
+    .map(m => {
+      if (Array.isArray(m.content)) {
+        return {
+          role: m.role,
+          content: m.content
+            .filter(part => part && typeof part === "object")
+            .map(part => {
+              if (part.type === "text") {
+                return {
+                  type: "text",
+                  text: typeof part.text === "string" ? part.text : ""
+                };
+              }
+
+              if (part.type === "image_url" && part.image_url?.url) {
+                return {
+                  type: "image_url",
+                  image_url: {
+                    url: part.image_url.url
+                  }
+                };
+              }
+
+              return null;
+            })
+            .filter(Boolean)
+        };
+      }
+
+      return {
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : ""
+      };
+    });
+}
+
+export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { status: 405 });
+    return json(res, 405, { error: "Method not allowed" });
   }
 
   try {
-    const body = await req.json();
-    const originalModel = body.model;
+    const {
+      model,
+      messages,
+      temperature = 0.2,
+      max_tokens = 1024,
+      top_p = 0.9,
+      stream = true
+    } = req.body || {};
 
-    let apiUrl = "";
-    let apiKey = "";
-
-    // РОУТЕР ПРОВАЙДЕРІВ
-    if (originalModel.startsWith("groq/")) {
-      apiUrl = "https://api.groq.com/openai/v1/chat/completions";
-      apiKey = process.env.GROQ_API_KEY;
-      body.model = originalModel.replace("groq/", ""); 
-    } 
-    else if (originalModel.startsWith("gemini/")) {
-      apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-      apiKey = process.env.GEMINI_API_KEY;
-      body.model = originalModel.replace("gemini/", "");
-    } 
-    else if (originalModel.startsWith("openrouter/")) {
-      apiUrl = "https://openrouter.ai/api/v1/chat/completions";
-      apiKey = process.env.OPENROUTER_API_KEY;
-      body.model = originalModel.replace("openrouter/", "");
-    } 
-    else {
-      // За замовчуванням - NVIDIA
-      apiUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
-      apiKey = process.env.NVIDIA_API_KEY;
+    if (!model) {
+      return json(res, 400, { error: "Missing model" });
     }
 
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: `Не знайдено API ключ для провайдера: ${originalModel}` }), { status: 500 });
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return json(res, 400, { error: "Missing messages" });
     }
 
-    const upstream = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://tvoy-site.com", 
-        "X-Title": "My AI Chat" 
-      },
-      body: JSON.stringify(body),
-    });
+    const cfg = getProviderConfig(model);
 
-    if (!upstream.ok) {
-      const errorText = await upstream.text().catch(() => "");
-      return new Response(JSON.stringify({ error: "Upstream API Error", details: errorText }), { status: upstream.status });
-    }
-
-    if (body.stream) {
-      return new Response(upstream.body, {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+    if (!cfg.apiKey) {
+      return json(res, 500, {
+        error: `Missing API key for provider: ${cfg.provider}`
       });
     }
 
-    const data = await upstream.text();
-    return new Response(data, { status: 200, headers: { "Content-Type": "application/json" } });
+    const cleanMessages = sanitizeMessages(messages);
 
+    const payload = {
+      model: cfg.model,
+      messages: cleanMessages,
+      temperature,
+      top_p,
+      stream
+    };
+
+    if (cfg.provider === "groq") {
+      payload.max_completion_tokens = max_tokens;
+    } else {
+      payload.max_tokens = max_tokens;
+    }
+
+    const upstream = await fetch(cfg.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cfg.apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!upstream.ok) {
+      const raw = await upstream.text().catch(() => "");
+      let parsed = null;
+
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_) {}
+
+      return json(res, upstream.status, {
+        error: parsed?.error || raw || `Upstream error ${upstream.status}`,
+        provider: cfg.provider,
+        model: cfg.model,
+        details: raw
+      });
+    }
+
+    if (!stream) {
+      const data = await upstream.json();
+      return res.status(200).json(data);
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive"
+    });
+
+    if (!upstream.body) {
+      res.write(`data: ${JSON.stringify({
+        error: { message: "Empty upstream body" }
+      })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value, { stream: true }));
+    }
+
+    res.end();
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return json(res, 500, {
+      error: error?.message || "Internal server error"
+    });
   }
 }
