@@ -6,13 +6,11 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
-// ТОЧНІ ідентифікатори моделей з NVIDIA API
+// NVIDIA підтримує лише ці 3 з твого списку
 const NVIDIA_MODEL_MAP = {
   "google/gemma-3-27b-it": "google/gemma-3-27b-it",
   "meta/llama-3.2-90b-vision-instruct": "meta/llama-3.2-90b-vision-instruct",
-  "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct",
-  "qwen/qwen3.5-122b-a10b": "qwen/qwen-3.5-122b-a10b", 
-  "abacusai/dracarys-llama-3.1-70b-instruct": "abacusai/dracarys-llama-3.1-70b-instruct"
+  "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct"
 };
 
 function getProviderConfig(model) {
@@ -20,6 +18,7 @@ function getProviderConfig(model) {
     throw new Error("Model is required");
   }
 
+  // 1. GROQ
   if (model.startsWith("groq/")) {
     return {
       provider: "groq",
@@ -29,6 +28,7 @@ function getProviderConfig(model) {
     };
   }
 
+  // 2. GEMINI
   if (model.startsWith("gemini/")) {
     return {
       provider: "gemini",
@@ -38,6 +38,17 @@ function getProviderConfig(model) {
     };
   }
 
+  // 3. OPENROUTER (Сюди йдуть Qwen та Dracarys)
+  if (model.startsWith("qwen/") || model.startsWith("abacusai/")) {
+    return {
+      provider: "openrouter",
+      apiKey: process.env.OPENROUTER_API_KEY,
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      model: model // OpenRouter приймає назву прямо так, наприклад "qwen/qwen3.5-122b-a10b"
+    };
+  }
+
+  // 4. NVIDIA
   if (NVIDIA_MODEL_MAP[model]) {
     return {
       provider: "nvidia",
@@ -68,7 +79,6 @@ function sanitizeMessages(messages) {
                   text: typeof part.text === "string" ? part.text : ""
                 };
               }
-
               if (part.type === "image_url" && part.image_url?.url) {
                 return {
                   type: "image_url",
@@ -77,13 +87,11 @@ function sanitizeMessages(messages) {
                   }
                 };
               }
-
               return null;
             })
             .filter(Boolean)
         };
       }
-
       return {
         role: m.role,
         content: typeof m.content === "string" ? m.content : ""
@@ -150,10 +158,7 @@ export default async function handler(req, res) {
     if (!upstream.ok) {
       const raw = await upstream.text().catch(() => "");
       let parsed = null;
-
-      try {
-        parsed = JSON.parse(raw);
-      } catch (_) {}
+      try { parsed = JSON.parse(raw); } catch (_) {}
 
       return json(res, upstream.status, {
         error: parsed?.error || raw || `Upstream error ${upstream.status}`,
@@ -175,9 +180,7 @@ export default async function handler(req, res) {
     });
 
     if (!upstream.body) {
-      res.write(`data: ${JSON.stringify({
-        error: { message: "Empty upstream body" }
-      })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: { message: "Empty upstream body" } })}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
       return;
