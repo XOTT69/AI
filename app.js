@@ -112,7 +112,9 @@ window.copyCodeBtn = function(btn) {
   const pre = btn.parentElement.parentElement.nextElementSibling;
   navigator.clipboard.writeText(pre.innerText).then(() => {
     btn.innerHTML = "✅";
-    setTimeout(() => (btn.innerHTML = "📋 Копіювати"), 2000);
+    setTimeout(() => {
+      btn.innerHTML = "📋 Копіювати";
+    }, 2000);
   });
 };
 
@@ -536,12 +538,24 @@ async function sendChatMessage(text, isRetry = false) {
 
       try {
         const parsed = JSON.parse(raw);
-        message += parsed?.details ? `: ${parsed.details}` : parsed?.error ? `: ${parsed.error}` : "";
+        if (parsed?.details) {
+          message += `: ${parsed.details}`;
+        } else if (parsed?.error?.message) {
+          message += `: ${parsed.error.message}`;
+        } else if (parsed?.error) {
+          message += `: ${typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error)}`;
+        } else if (raw) {
+          message += `: ${raw}`;
+        }
       } catch {
         if (raw) message += `: ${raw}`;
       }
 
       throw new Error(message);
+    }
+
+    if (!response.body) {
+      throw new Error("Порожня відповідь сервера");
     }
 
     const reader = response.body.getReader();
@@ -556,20 +570,24 @@ async function sendChatMessage(text, isRetry = false) {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
+
       const parts = buffer.split("\n\n");
       buffer = parts.pop() || "";
 
       for (const part of parts) {
         const lines = part.split("\n");
+
         for (const line of lines) {
           if (!line.startsWith("data:")) continue;
+
           const dataStr = line.slice(5).trim();
           if (!dataStr || dataStr === "[DONE]") continue;
 
           try {
             const parsed = JSON.parse(dataStr);
-            const delta = parsed?.choices?.[0]?.delta?.content || "";
-            if (delta) {
+            const delta = parsed?.choices?.[0]?.delta?.content || parsed?.choices?.[0]?.message?.content || "";
+
+            if (typeof delta === "string" && delta) {
               assistantMsg.content += delta;
               if (targetEl) {
                 targetEl.innerHTML = renderMarkdown(assistantMsg.content);
@@ -585,6 +603,7 @@ async function sendChatMessage(text, isRetry = false) {
   } catch (e) {
     if (e?.name === "AbortError") {
       assistantMsg.content += "\n\n*[Зупинено]*";
+      renderAll();
     } else {
       active.messages.pop();
       active.messages.push({
