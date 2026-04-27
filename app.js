@@ -26,24 +26,45 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
 
-let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
-let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF"; 
+let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
+let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
-// ВІДНОВЛЕНО ВСІ МОДЕЛІ (Включаючи DeepSeek R1, Qwen та Dracarys)
 const ALLOWED_MODELS = {
-  // Розумні (OpenRouter + NVIDIA)
-  "openrouter/deepseek/deepseek-r1:free": { system: "Ти надзвичайно розумний AI (DeepSeek R1). Відповідай українською.", tokens: 8192, vision: false },
-  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.", tokens: 4096, vision: false },
-  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування. Відповідай українською.", tokens: 4096, vision: false },
-  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
-
-  // Швидкі (Groq + Gemini)
-  "groq/llama-3.3-70b-versatile": { system: "Ти блискавичний AI-помічник. Відповідай українською.", tokens: 8192, vision: false },
-  "gemini/gemini-2.5-flash": { system: "Ти сучасний AI-помічник Gemini. Відповідай українською.", tokens: 8192, vision: true },
-  
-  // NVIDIA NIM (Базові)
-  "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
-  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
+  "groq/llama-3.3-70b-versatile": {
+    system: "Ти швидкий і точний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "gemini/gemini-2.5-flash": {
+    system: "Ти мультимодальний AI-помічник Gemini. Відповідай українською.",
+    tokens: 4096,
+    vision: true
+  },
+  "meta/llama-3.3-70b-instruct": {
+    system: "Ти потужний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "qwen/qwen3.5-122b-a10b": {
+    system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "abacusai/dracarys-llama-3.1-70b-instruct": {
+    system: "Ти AI-помічник для програмування. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "google/gemma-3-27b-it": {
+    system: "Ти мультимодальний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: true
+  },
+  "meta/llama-3.2-90b-vision-instruct": {
+    system: "Ти AI-помічник для аналізу зображень. Відповідай українською.",
+    tokens: 2048,
+    vision: true
+  }
 };
 
 let sb = null;
@@ -51,7 +72,7 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v43"; 
+const STORAGE_KEY = "ai-chat-sync-v50";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -61,7 +82,8 @@ let syncTimeout = null;
 
 let state = JSON.parse(
   localStorage.getItem(STORAGE_KEY) ||
-  localStorage.getItem("ai-chat-sync-v42") ||
+  localStorage.getItem("ai-chat-sync-v49") ||
+  localStorage.getItem("ai-chat-sync-v48") ||
   "null"
 );
 
@@ -96,7 +118,7 @@ window.copyCodeBtn = function(btn) {
 
 function formatThinking(text) {
   if (!text) return "";
-  let processed = text.replace(/<think>/g, '<details class="thought-block" open><summary>Процес мислення</summary><div class="thought-content">');
+  let processed = text.replace(/<think>/g, '<details class="thought-block"><summary>Думка</summary><div class="thought-content">');
   processed = processed.replace(/<\/think>/g, "</div></details>");
   return processed;
 }
@@ -174,6 +196,7 @@ function renderAuthState() {
 
 function renderChatList() {
   if (!chatList) return;
+
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
@@ -207,6 +230,7 @@ function renderChatList() {
       renderAll();
       sidebar?.classList.remove("open");
       mobileOverlay?.classList.remove("show");
+      document.body.classList.remove("no-scroll");
     };
 
     chatList.appendChild(div);
@@ -220,7 +244,7 @@ function renderMessages() {
   chat.innerHTML = "";
 
   if (!active.messages.length) {
-    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти? Оберіть модель зверху та почніть діалог.</div>`;
+    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`;
     return;
   }
 
@@ -303,7 +327,10 @@ function clearSelectedImage() {
 
 function setBusy(isBusy, text = "") {
   requestInFlight = isBusy;
-  if (statusText && text) statusText.textContent = text;
+  if (statusText) {
+    statusText.textContent = text || (isBusy ? "Генерація..." : "Готово");
+    statusText.classList.remove("hidden");
+  }
   renderAll();
 }
 
@@ -366,17 +393,91 @@ window.retryMessage = function() {
   const active = getActiveChat();
   if (!active) return;
 
-  active.messages.pop();
-  const lastUserMsg = active.messages[active.messages.length - 1];
-  if (lastUserMsg) sendChatMessage(lastUserMsg.content, true);
+  const lastError = active.messages[active.messages.length - 1];
+  if (lastError?.isError) {
+    active.messages.pop();
+  }
+
+  const lastUserMsg = [...active.messages].reverse().find(m => m.role === "user");
+  if (lastUserMsg) {
+    selectedImage = lastUserMsg.image || null;
+    updateSelectedImageUI();
+    sendChatMessage(lastUserMsg.content || "", true);
+  }
 };
+
+function buildMessagesForAPI(active, assistantMsgId, modelConf) {
+  const safeMessages = [
+    { role: "system", content: modelConf.system }
+  ];
+
+  const recent = active.messages
+    .slice(-12)
+    .filter(m => m.id !== assistantMsgId && !m.isError);
+
+  for (const m of recent) {
+    if (m.role === "user") {
+      const text = (m.content || "").trim();
+
+      if (m.image?.dataUrl) {
+        if (modelConf.vision) {
+          safeMessages.push({
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: text || "Опиши це зображення"
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: m.image.dataUrl
+                }
+              }
+            ]
+          });
+        } else {
+          safeMessages.push({
+            role: "user",
+            content: text || "Користувач надіслав зображення, але поточна модель не підтримує аналіз зображень."
+          });
+        }
+      } else {
+        safeMessages.push({
+          role: "user",
+          content: text
+        });
+      }
+    } else {
+      safeMessages.push({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : ""
+      });
+    }
+  }
+
+  return safeMessages;
+}
 
 async function sendChatMessage(text, isRetry = false) {
   if (requestInFlight) return;
 
   const active = ensureChat();
+  const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
+  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
 
   if (!isRetry) {
+    if (selectedImage && !modelConf.vision) {
+      active.messages.push({
+        id: uid(),
+        role: "assistant",
+        isError: true,
+        content: "Ця модель не підтримує фото. Обери Gemini Flash, Gemma 3 або Llama 3.2 Vision."
+      });
+      renderAll();
+      return;
+    }
+
     active.messages.push({
       id: uid(),
       role: "user",
@@ -409,54 +510,7 @@ async function sendChatMessage(text, isRetry = false) {
   renderAll();
   setBusy(true, "Генерація...");
 
-  const modelId = modelSelect?.value || "openrouter/deepseek/deepseek-r1:free";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["openrouter/deepseek/deepseek-r1:free"];
-
-  if (selectedImage && !modelConf.vision && !isRetry) {
-    active.messages.pop();
-    active.messages.push({
-      id: uid(),
-      role: "assistant",
-      isError: true,
-      content: "Ця модель не підтримує розпізнавання фото. Оберіть іншу модель (наприклад, Gemini Flash або Llama Vision)."
-    });
-    renderAll();
-    setBusy(false, "Помилка");
-    return;
-  }
-
-  const safeMessages = [
-    { role: "system", content: modelConf.system }
-  ];
-
-  const recent = active.messages
-    .slice(-12)
-    .filter(m => m.id !== assistantMsg.id && !m.isError);
-
-  for (const m of recent) {
-    if (m.role === "user" && m.image?.dataUrl) {
-      safeMessages.push({
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: (m.content || "Опиши це зображення").trim()
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: m.image.dataUrl
-            }
-          }
-        ]
-      });
-    } else {
-      safeMessages.push({
-        role: m.role,
-        content: m.content || ""
-      });
-    }
-  }
+  const safeMessages = buildMessagesForAPI(active, assistantMsg.id, modelConf);
 
   const controller = new AbortController();
   currentController = controller;
@@ -479,12 +533,14 @@ async function sendChatMessage(text, isRetry = false) {
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       let message = `HTTP ${response.status}`;
+
       try {
         const parsed = JSON.parse(raw);
         message += parsed?.details ? `: ${parsed.details}` : parsed?.error ? `: ${parsed.error}` : "";
       } catch {
         if (raw) message += `: ${raw}`;
       }
+
       throw new Error(message);
     }
 
@@ -555,16 +611,18 @@ themeToggleBtn?.addEventListener("click", () => {
 hamburgerBtn?.addEventListener("click", () => {
   sidebar?.classList.add("open");
   mobileOverlay?.classList.add("show");
+  document.body.classList.add("no-scroll");
 });
 
 mobileOverlay?.addEventListener("click", () => {
   sidebar?.classList.remove("open");
   mobileOverlay?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
 });
 
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
-  const text = promptInput?.value.trim();
+  const text = promptInput?.value.trim() || "";
   if (text || selectedImage) sendChatMessage(text);
 });
 
@@ -595,6 +653,7 @@ newChatBtn?.addEventListener("click", () => {
   renderAll();
   sidebar?.classList.remove("open");
   mobileOverlay?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
 });
 
 imageBtn?.addEventListener("click", () => imageInput?.click());
