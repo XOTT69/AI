@@ -15,7 +15,9 @@ const NVIDIA_MODEL_MAP = {
 
 // 2. Карта моделей для OpenRouter
 const OPENROUTER_MODEL_MAP = {
-  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct" // Надійний Qwen на бекенді
+  // Використовуємо :free тег, він гарантує маршрутизацію тільки на робочі безкоштовні ноди, 
+  // які точно підтримують chat/completions
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct:free" 
 };
 
 function getProviderConfig(model) {
@@ -150,9 +152,12 @@ export default async function handler(req, res) {
       "Authorization": `Bearer ${cfg.apiKey}`
     };
     
+    // Специфічні налаштування для OpenRouter, щоб уникати битих нод (як Novita)
     if (cfg.provider === "openrouter") {
        headers["HTTP-Referer"] = "https://ai-chat.com"; 
        headers["X-Title"] = "AI Chat";
+       // Вимикаємо fallback на платні або нестандартні роутери, якщо ми просимо free
+       payload.route = "fallback";
     }
 
     if (cfg.provider === "groq") {
@@ -172,11 +177,14 @@ export default async function handler(req, res) {
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch (_) {}
 
+      // Робимо помилку більш читабельною, якщо це OpenRouter
+      let errorMessage = parsed?.error?.message || parsed?.error || raw || `Upstream error ${upstream.status}`;
+      if (typeof errorMessage === 'object') errorMessage = JSON.stringify(errorMessage);
+
       return json(res, upstream.status, {
-        error: parsed?.error || raw || `Upstream error ${upstream.status}`,
+        error: errorMessage,
         provider: cfg.provider,
-        model: cfg.model,
-        details: raw
+        model: cfg.model
       });
     }
 
