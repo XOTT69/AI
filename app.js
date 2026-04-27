@@ -36,63 +36,77 @@ let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
 const ALLOWED_MODELS = {
-  "meta/llama-3.3-70b-instruct": {
-    system: "Ти швидкий і точний AI-помічник. Відповідай українською мовою.",
-    fastTokens: 1500, smartTokens: 3000
-  },
-  "qwen/qwen3.5-122b-a10b": {
-    system: "Ти сильний AI-помічник для складних запитів. Відповідай українською мовою.",
-    fastTokens: 1800, smartTokens: 3500
-  },
-  "google/gemma-3-27b-it": {
-    system: "Ти мультимодальний AI-помічник. Аналізуй зображення і текст на них. Відповідай українською мовою.",
-    fastTokens: 1500, smartTokens: 3000
-  },
-  "abacusai/dracarys-llama-3.1-70b-instruct": {
-    system: "Ти AI-помічник для програмування. Відповідай українською мовою.",
-    fastTokens: 2000, smartTokens: 4000
-  }
+  "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник. Відповідай українською мовою.", fastTokens: 1500, smartTokens: 3000 },
+  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів. Відповідай українською мовою.", fastTokens: 1800, smartTokens: 3500 },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Аналізуй зображення і текст на них. Відповідай українською мовою.", fastTokens: 1500, smartTokens: 3000 },
+  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування. Відповідай українською мовою.", fastTokens: 2000, smartTokens: 4000 }
 };
 
 let sb = null;
 if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 } else {
-  sb = {
-    auth: {
-      getSession: async () => ({ data: { session: null }, error: null }),
-      signInWithOAuth: async () => ({ error: new Error("Supabase not configured") }),
-      signOut: async () => ({ error: null }),
-      onAuthStateChange: () => {}
-    }
-  };
+  sb = { auth: { getSession: async () => ({ data: { session: null }, error: null }), signInWithOAuth: async () => ({ error: new Error("Supabase not configured") }), signOut: async () => ({ error: null }), onAuthStateChange: () => {} } };
 }
 
-const STORAGE_KEY = "ai-chat-sync-v27";
+const STORAGE_KEY = "ai-chat-sync-v28";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-if (!state || !Array.isArray(state.chats)) {
-  state = { activeChatId: null, chats: [], mode: "fast", theme: "dark" };
+if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], mode: "fast", theme: "dark" };
+if (!state.theme) state.theme = "dark";
+
+// --- НАЛАШТУВАННЯ MARKDOWN (Підсвітка коду, Копіювання, Теги <think>) ---
+const renderer = new marked.Renderer();
+renderer.code = function(code, language) {
+  const validLang = hljs.getLanguage(language) ? language : 'plaintext';
+  const highlighted = hljs.highlight(code, { language: validLang }).value;
+  return `<div class="code-block">
+            <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Копіювати</button>
+            <pre><code class="hljs ${validLang}">${highlighted}</code></pre>
+          </div>`;
+};
+marked.setOptions({ renderer: renderer, breaks: true, gfm: true });
+
+// Глобальна функція для кнопки копіювання
+window.copyCodeBtn = function(btn) {
+  const code = btn.nextElementSibling.innerText;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✅ Скопійовано';
+    setTimeout(() => btn.textContent = '📋 Копіювати', 2000);
+  });
+};
+
+function formatThinking(text) {
+  if (!text) return "";
+  let processed = text.replace(/<think>/g, '<details class="thought-block"><summary>🧠 Хід думок</summary><div class="thought-content">');
+  processed = processed.replace(/<\/think>/g, '</div></details>');
+  // Якщо стрімінг ще йде і тег <think> відкритий, але не закритий
+  const openCount = (processed.match(/<details/g) || []).length;
+  const closeCount = (processed.match(/<\/details>/g) || []).length;
+  if (openCount > closeCount) {
+    processed += '</div></details>';
+  }
+  return processed;
 }
-if (!state.theme) state.theme = "dark"; // Захист для старих збережень
 
-marked.setOptions({ breaks: true, gfm: true });
+function renderMarkdown(text) {
+  const withThinking = formatThinking(text);
+  return DOMPurify.sanitize(marked.parse(withThinking), { ADD_TAGS: ['details', 'summary'] });
+}
 
+// --- БАЗОВІ ФУНКЦІЇ ---
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function updateStatus(text) { if (statusText) statusText.textContent = text; }
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
-// --- ТЕМА ---
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
-  if (themeToggleBtn) {
-    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
-  }
+  if (themeToggleBtn) themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
 }
 
 themeToggleBtn?.addEventListener("click", () => {
@@ -101,13 +115,10 @@ themeToggleBtn?.addEventListener("click", () => {
   applyTheme();
 });
 
-// --- МЕНЮ ---
 function openSidebar() {
   sidebar.classList.add("open");
   mobileOverlay.classList.add("show");
-  if (window.innerWidth <= 768) {
-    closeSidebarBtn.style.display = "block";
-  }
+  if (window.innerWidth <= 768) closeSidebarBtn.style.display = "block";
 }
 
 function closeSidebar() {
@@ -119,7 +130,6 @@ hamburgerBtn?.addEventListener("click", openSidebar);
 closeSidebarBtn?.addEventListener("click", closeSidebar);
 mobileOverlay?.addEventListener("click", closeSidebar);
 
-// --- ЧАТ ---
 function ensureChat() {
   let active = getActiveChat();
   if (!active) {
@@ -130,8 +140,6 @@ function ensureChat() {
   }
   return active;
 }
-
-function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text || "")); }
 
 function renderAuthState() {
   if (!authLoggedOut || !authLoggedIn) return;
@@ -154,39 +162,29 @@ function renderChatList() {
   for (const item of state.chats) {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
-    
     const infoDiv = document.createElement("div");
     infoDiv.className = "chat-item-info";
-    
     const title = document.createElement("div");
     title.className = "chat-item-title";
     title.textContent = item.title || "Новий чат";
-    
     const meta = document.createElement("div");
     meta.className = "chat-item-meta";
     meta.textContent = `${item.messages.length} повідомлень`;
-    
     infoDiv.append(title, meta);
     
     const delBtn = document.createElement("button");
     delBtn.className = "chat-item-delete";
     delBtn.innerHTML = "✕";
-    delBtn.title = "Видалити чат";
-    
     delBtn.onclick = (e) => {
       e.stopPropagation();
       if (confirm("Ви дійсно хочете видалити цей чат?")) {
         state.chats = state.chats.filter(c => c.id !== item.id);
-        if (state.activeChatId === item.id) {
-          state.activeChatId = state.chats.length > 0 ? state.chats[0].id : null;
-        }
+        if (state.activeChatId === item.id) state.activeChatId = state.chats.length > 0 ? state.chats[0].id : null;
         saveState();
         renderAll();
       }
     };
-    
     div.append(infoDiv, delBtn);
-    
     div.onclick = () => {
       if (requestInFlight) return;
       state.activeChatId = item.id;
@@ -194,10 +192,22 @@ function renderChatList() {
       renderAll();
       if (window.innerWidth <= 768) closeSidebar();
     };
-    
     chatList.appendChild(div);
   }
 }
+
+// Глобальна функція для повтору повідомлення
+window.retryMessage = function() {
+  const active = getActiveChat();
+  if (!active) return;
+  // Видаляємо блок помилки
+  active.messages.pop();
+  // Відправляємо останній запит користувача знову
+  const lastUserMsg = active.messages[active.messages.length - 1];
+  if (lastUserMsg) {
+    sendChatMessage(lastUserMsg.content, true); // true означає isRetry
+  }
+};
 
 function renderMessages() {
   const active = ensureChat();
@@ -206,10 +216,7 @@ function renderMessages() {
   if (chatTitle) chatTitle.textContent = active.title || "Новий чат";
 
   if (!active.messages.length) {
-    const empty = document.createElement("div");
-    empty.className = "chat-empty";
-    empty.textContent = "Напишіть повідомлення для початку.";
-    chat.appendChild(empty);
+    chat.innerHTML = `<div class="chat-empty">Напишіть повідомлення для початку.</div>`;
     return;
   }
 
@@ -218,8 +225,11 @@ function renderMessages() {
     wrap.className = `message ${msg.role}`;
     const inner = document.createElement("div");
     inner.className = "message-content";
-
-    if (msg.role === "assistant") {
+    
+    if (msg.isError) {
+      inner.classList.add("error-block");
+      inner.innerHTML = `<strong>Помилка:</strong> ${msg.content}<br><button class="btn primary" style="margin-top: 10px; width: auto; padding: 6px 14px;" onclick="retryMessage()">🔄 Повторити</button>`;
+    } else if (msg.role === "assistant") {
       inner.innerHTML = renderMarkdown(msg.content || "");
     } else {
       inner.textContent = msg.content || "";
@@ -231,7 +241,6 @@ function renderMessages() {
       img.className = "inline-preview-image";
       inner.appendChild(img);
     }
-
     wrap.appendChild(inner);
     chat.appendChild(wrap);
   }
@@ -295,43 +304,45 @@ function setBusy(isBusy, status = "Готово") {
   renderAll(); 
 }
 
-async function sendChatMessage(text) {
+// --- ГОЛОВНА ФУНКЦІЯ ВІДПРАВКИ ---
+async function sendChatMessage(text, isRetry = false) {
   if (requestInFlight) return;
 
   const active = ensureChat();
-  active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage, createdAt: Date.now() });
-
-  if (active.messages.length === 1) {
-    active.title = text.slice(0, 30) || "Новий чат";
+  
+  // Якщо це не повторна спроба, додаємо повідомлення від користувача
+  if (!isRetry) {
+    active.messages.push({ id: uid(), role: "user", content: text, image: selectedImage, createdAt: Date.now() });
+    if (active.messages.length === 1) active.title = text.slice(0, 30) || "Новий чат";
+    
+    // Обмеження історії (щоб не переповнити пам'ять)
+    if (active.messages.length > 60) active.messages = active.messages.slice(-60);
+    
+    promptInput.value = "";
+    autoResize();
+    clearSelectedImage();
   }
-
-  promptInput.value = "";
-  autoResize();
 
   const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
   active.messages.push(assistantMsg);
   renderAll();
-
   setBusy(true, "Генерація...");
 
   const modelId = ALLOWED_MODELS[modelSelect?.value] ? modelSelect.value : "meta/llama-3.3-70b-instruct";
   const modelConf = ALLOWED_MODELS[modelId];
   let safeMessages = [{ role: "system", content: modelConf.system }];
-  const recent = active.messages.slice(-10).filter(m => m.id !== assistantMsg.id);
+  
+  // Фільтруємо помилки з контексту перед відправкою
+  const recent = active.messages.slice(-10).filter(m => m.id !== assistantMsg.id && !m.isError);
 
   if (selectedImage?.dataUrl && modelId.includes("gemma-3")) {
     safeMessages.push({
       role: "user",
-      content: [
-        { type: "text", text: text || "Що на фото?" },
-        { type: "image_url", image_url: { url: selectedImage.dataUrl } }
-      ]
+      content: [{ type: "text", text: text || "Що на фото?" }, { type: "image_url", image_url: { url: selectedImage.dataUrl } }]
     });
   } else {
     recent.forEach(m => { safeMessages.push({ role: m.role, content: m.content }); });
   }
-
-  clearSelectedImage();
 
   const controller = new AbortController();
   currentController = controller;
@@ -351,7 +362,7 @@ async function sendChatMessage(text) {
       })
     });
 
-    if (!response.ok) throw new Error(`Помилка: ${response.status}`);
+    if (!response.ok) throw new Error(`${response.status}`);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
@@ -393,10 +404,10 @@ async function sendChatMessage(text) {
     if (e?.name === "AbortError") {
       assistantMsg.content += "\n\n*[Зупинено]*";
     } else {
-      assistantMsg.content += `\n\nПомилка: ${e.message}`;
+      active.messages.pop(); // Видаляємо пусте повідомлення
+      active.messages.push({ id: uid(), role: "assistant", isError: true, content: e.message });
     }
-    const msgEls = chat.querySelectorAll(".message.assistant .message-content");
-    if (msgEls.length > 0) msgEls[msgEls.length - 1].innerHTML = renderMarkdown(assistantMsg.content);
+    renderAll();
   } finally {
     currentController = null;
     saveState();
@@ -444,6 +455,12 @@ imageBtn?.addEventListener("click", () => imageInput?.click());
 imageInput?.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   if (!file) return;
+  // Ліміт на розмір картинки 5MB
+  if (file.size > 5 * 1024 * 1024) {
+    alert("Файл занадто великий! Максимальний розмір: 5 МБ.");
+    imageInput.value = "";
+    return;
+  }
   try {
     const dataUrl = await fileToDataUrl(file);
     selectedImage = { name: file.name, type: file.type, dataUrl };
