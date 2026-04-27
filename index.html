@@ -3,16 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>AI Chat Mobile</title>
+  <title>AI Chat</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  <!-- Залишаємо темну тему для блоків з кодом, це завжди виглядає стильно -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   
   <style>
-    /* ТЕМНА ТЕМА (За замовчуванням) */
+    /* ТЕМНА ТЕМА */
     :root {
       --bg: #0b1220;
       --panel: #111827;
@@ -54,7 +53,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       height: 100dvh;
       overflow: hidden;
-      transition: background 0.3s, color 0.3s; /* Плавний перехід теми */
+      transition: background 0.3s, color 0.3s;
     }
 
     .app-container {
@@ -85,7 +84,7 @@
       align-items: center;
     }
 
-    /* НАЛАШТУВАННЯ У МЕНЮ */
+    /* НАЛАШТУВАННЯ У МЕНЮ (ПК і ТЕЛЕФОН) */
     .sidebar-settings {
       padding: 12px;
       display: flex;
@@ -212,8 +211,16 @@
       background: var(--topbar);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px; z-index: 10; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between; z-index: 10; flex-shrink: 0;
       transition: background 0.3s;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
     }
 
     .hamburger-btn {
@@ -224,6 +231,20 @@
     .chat-header-info { flex: 1; min-width: 0; }
     .chat-header-info h3 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status-indicator { font-size: 12px; color: var(--muted); }
+
+    .clear-chat-icon {
+      background: transparent;
+      border: none;
+      color: var(--danger-text);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+    }
+
+    .clear-chat-icon:hover {
+      background: var(--danger-bg);
+    }
 
     /* ЧАТ (ПОВІДОМЛЕННЯ) */
     .chat-container {
@@ -267,6 +288,7 @@
     .input-form {
       display: flex; align-items: flex-end; gap: 8px; background: var(--panel);
       border: 1px solid var(--border); border-radius: 20px; padding: 6px;
+      max-width: 900px; margin: 0 auto;
     }
 
     .btn-icon {
@@ -292,9 +314,7 @@
     }
     .btn.primary { background: var(--accent); color: white; }
     
-    /* Змінні для червоного тексту */
     .text-danger { color: var(--danger-text) !important; }
-
     .hidden { display: none !important; }
 
     .mobile-overlay {
@@ -328,7 +348,7 @@
         <button type="button" class="btn-icon" id="closeSidebarBtn" style="display: none;">✕</button>
       </div>
 
-      <!-- НАЛАШТУВАННЯ + ПЕРЕМИКАЧ ТЕМИ -->
+      <!-- НАЛАШТУВАННЯ + ПЕРЕМИКАЧ ТЕМИ (ЄДИНІ ДЛЯ ПК І ТЕЛЕФОНУ) -->
       <div class="sidebar-settings">
         <div style="display: flex; gap: 8px; margin-bottom: 4px;">
           <button type="button" class="btn primary" id="newChatBtn" style="margin: 0; flex: 1;">Новий чат</button>
@@ -347,7 +367,7 @@
             <button type="button" class="mode-btn active" id="fastModeBtn">Швидко</button>
             <button type="button" class="mode-btn" id="smartModeBtn">Розумно</button>
           </div>
-          <label class="checkbox-label">
+          <label class="checkbox-label" title="Глибоке мислення">
             <input type="checkbox" id="thinking"> 🧠
           </label>
         </div>
@@ -377,14 +397,16 @@
     <!-- MAIN CHAT AREA -->
     <main class="main-content">
       <header class="topbar">
-        <button type="button" class="hamburger-btn" id="hamburgerBtn">☰</button>
-        
-        <div class="chat-header-info">
-          <h3 id="chatTitle">Новий чат</h3>
-          <span class="status-indicator" id="statusText">Готово</span>
+        <div class="topbar-left">
+          <button type="button" class="hamburger-btn" id="hamburgerBtn">☰</button>
+          <div class="chat-header-info">
+            <h3 id="chatTitle">Новий чат</h3>
+            <span class="status-indicator" id="statusText">Готово</span>
+          </div>
         </div>
         
-        <button type="button" class="control-btn text-danger" id="clearBtn" style="width: auto;">Очистити чат</button>
+        <!-- Кнопка очищення чату (Іконка кошика) -->
+        <button type="button" class="clear-chat-icon" id="clearBtn" title="Очистити чат">🗑️</button>
       </header>
 
       <div class="chat-container" id="chat">
