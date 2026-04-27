@@ -18,10 +18,9 @@ export default async function handler(req) {
     if (originalModel.startsWith("groq/")) {
       apiUrl = "https://api.groq.com/openai/v1/chat/completions";
       apiKey = process.env.GROQ_API_KEY;
-      body.model = originalModel.replace("groq/", ""); // Забираємо префікс
+      body.model = originalModel.replace("groq/", ""); 
     } 
     else if (originalModel.startsWith("gemini/")) {
-      // Новий OpenAI-сумісний ендпоінт від Google!
       apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
       apiKey = process.env.GEMINI_API_KEY;
       body.model = originalModel.replace("gemini/", "");
@@ -46,8 +45,8 @@ export default async function handler(req) {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://tvoy-site.com", // Потрібно для OpenRouter
-        "X-Title": "My AI Chat" // Потрібно для OpenRouter
+        "HTTP-Referer": "https://tvoy-site.com", 
+        "X-Title": "My AI Chat" 
       },
       body: JSON.stringify(body),
     });
