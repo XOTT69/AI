@@ -3,6 +3,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  // Telegram вимагає статус 200, інакше повторюватиме запит
   if (req.method !== 'POST') return res.status(200).send('OK');
   
   const { message } = req.body;
@@ -14,7 +15,7 @@ export default async function handler(req, res) {
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
-  // Відправляємо статус "друкує...", не чекаючи завершення
+  // Відправляємо статус "друкує...", щоб бот не здавався завислим
   fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -31,29 +32,26 @@ export default async function handler(req, res) {
         "X-Title": "Telegram AI Bot"
       },
       body: JSON.stringify({
-        // Використовуємо стабільну безкоштовну модель для тесту
-        model: "google/gemini-2.0-flash-lite-preview-02-05:free", 
-        messages: [{ role: "user", content: userText }]
+        // Використовуємо актуальну безкоштовну Google Gemma
+        model: "google/gemma-4-31b-it:free", 
+        messages: [{ role: "user", content: userText }],
+        route: "fallback" // Додаємо для стабільності на OpenRouter
       })
     });
 
     const aiData = await aiResponse.json();
     let replyText = "";
 
-    // Перевіряємо, чи є помилка від OpenRouter
+    // Обробка помилок та формування відповіді
     if (aiData.error) {
       replyText = `⚠️ Помилка OpenRouter:\n${aiData.error.message || JSON.stringify(aiData.error)}`;
-    } 
-    // Перевіряємо, чи є успішна відповідь
-    else if (aiData.choices && aiData.choices.length > 0) {
+    } else if (aiData.choices && aiData.choices.length > 0) {
       replyText = aiData.choices[0].message.content;
-    } 
-    // Якщо прийшло щось незрозуміле
-    else {
+    } else {
       replyText = `❓ Невідома структура відповіді:\n${JSON.stringify(aiData).substring(0, 200)}`;
     }
 
-    // Відправляємо повідомлення в Telegram
+    // Відправка фінального тексту в Telegram
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
