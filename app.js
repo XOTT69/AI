@@ -50,11 +50,6 @@ const ALLOWED_MODELS = {
     tokens: 4096,
     vision: false
   },
-  "abacusai/dracarys-llama-3.1-70b-instruct": {
-    system: "Ти AI-помічник для програмування. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
   "google/gemma-3-27b-it": {
     system: "Ти мультимодальний AI-помічник. Відповідай українською.",
     tokens: 4096,
@@ -408,7 +403,6 @@ window.retryMessage = function() {
   }
 };
 
-// ВИПРАВЛЕНО: Функція тепер склеює однакові ролі підряд
 function buildMessagesForAPI(active, assistantMsgId, modelConf) {
   const rawMessages = [
     { role: "system", content: modelConf.system }
