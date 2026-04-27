@@ -408,8 +408,9 @@ window.retryMessage = function() {
   }
 };
 
+// ВИПРАВЛЕНО: Функція тепер склеює однакові ролі підряд
 function buildMessagesForAPI(active, assistantMsgId, modelConf) {
-  const safeMessages = [
+  const rawMessages = [
     { role: "system", content: modelConf.system }
   ];
 
@@ -421,44 +422,74 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
     if (m.role === "user") {
       const text = (m.content || "").trim();
 
-      if (m.image?.dataUrl) {
-        if (modelConf.vision) {
-          safeMessages.push({
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: text || "Опиши це зображення"
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: m.image.dataUrl
-                }
-              }
-            ]
-          });
-        } else {
-          safeMessages.push({
-            role: "user",
-            content: text || "Користувач надіслав зображення, але поточна модель не підтримує аналіз зображень."
-          });
-        }
-      } else {
-        safeMessages.push({
+      if (m.image?.dataUrl && modelConf.vision) {
+        rawMessages.push({
           role: "user",
-          content: text
+          content: [
+            {
+              type: "text",
+              text: text || "Опиши це зображення"
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: m.image.dataUrl
+              }
+            }
+          ]
+        });
+      } else {
+        rawMessages.push({
+          role: "user",
+          content: text || (m.image?.dataUrl ? "Користувач надіслав зображення." : "")
         });
       }
-    } else {
-      safeMessages.push({
-        role: m.role,
+    } else if (m.role === "assistant") {
+      rawMessages.push({
+        role: "assistant",
         content: typeof m.content === "string" ? m.content : ""
       });
     }
   }
 
-  return safeMessages;
+  const normalized = [];
+  let systemMessage = null;
+
+  for (const msg of rawMessages) {
+    if (msg.role === "system") {
+      systemMessage = msg;
+      continue;
+    }
+
+    if (!normalized.length) {
+      normalized.push(msg);
+      continue;
+    }
+
+    const prev = normalized[normalized.length - 1];
+
+    if (prev.role === msg.role) {
+      if (typeof prev.content === "string" && typeof msg.content === "string") {
+        prev.content = `${prev.content}\n\n${msg.content}`.trim();
+      } else if (Array.isArray(prev.content) && Array.isArray(msg.content)) {
+        prev.content = [...prev.content, ...msg.content];
+      } else if (typeof prev.content === "string" && Array.isArray(msg.content)) {
+        prev.content = [
+          { type: "text", text: prev.content },
+          ...msg.content
+        ];
+      } else if (Array.isArray(prev.content) && typeof msg.content === "string") {
+        prev.content = [
+          ...prev.content,
+          { type: "text", text: msg.content }
+        ];
+      }
+    } else {
+      normalized.push(msg);
+    }
+  }
+
+  return systemMessage ? [systemMessage, ...normalized] : normalized;
 }
 
 async function sendChatMessage(text, isRetry = false) {
