@@ -6,8 +6,13 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
+// ТОЧНІ ідентифікатори моделей з NVIDIA API
 const NVIDIA_MODEL_MAP = {
-  "google/gemma-3-27b-it": "google/gemma-3-27b-it"
+  "google/gemma-3-27b-it": "google/gemma-3-27b-it",
+  "meta/llama-3.2-90b-vision-instruct": "meta/llama-3.2-90b-vision-instruct",
+  "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct",
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-3.5-122b-a10b", 
+  "abacusai/dracarys-llama-3.1-70b-instruct": "abacusai/dracarys-llama-3.1-70b-instruct"
 };
 
 function getProviderConfig(model) {
