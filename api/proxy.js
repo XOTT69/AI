@@ -13,10 +13,9 @@ const NVIDIA_MODEL_MAP = {
   "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct"
 };
 
-// 2. Карта моделей для OpenRouter (щоб точно працювало)
+// 2. Карта моделей для OpenRouter
 const OPENROUTER_MODEL_MAP = {
-  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct", // Замінив на стабільний Qwen, бо 122b-a10b міг зникнути
-  "abacusai/dracarys-llama-3.1-70b-instruct": "abacusai/dracarys-llama-3.1-70b-instruct" 
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct" // Надійний Qwen на бекенді
 };
 
 function getProviderConfig(model) {
@@ -146,7 +145,6 @@ export default async function handler(req, res) {
       stream
     };
 
-    // OpenRouter вимагає заголовок HTTP-Referer
     const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${cfg.apiKey}`
