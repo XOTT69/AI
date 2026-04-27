@@ -26,23 +26,18 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
 
-let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; // Твоя URL
-let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF"; // Твій Key
+let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
+let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF"; 
 
-// ОНОВЛЕНИЙ СПИСОК МОДЕЛЕЙ ДЛЯ БЕКЕНДУ
+// ТІЛЬКИ 100% ПРАЦЮЮЧІ МОДЕЛІ
 const ALLOWED_MODELS = {
-  // --- GROQ ---
+  // Groq
   "groq/llama-3.3-70b-versatile": { system: "Ти блискавичний AI-помічник. Відповідай українською.", tokens: 8192, vision: false },
-  "groq/deepseek-r1-distill-llama-70b": { system: "Ти надзвичайно розумний AI (DeepSeek). Відповідай українською.", tokens: 8192, vision: false },
   
-  // --- GOOGLE GEMINI ---
+  // Google
   "gemini/gemini-2.5-flash": { system: "Ти сучасний AI-помічник Gemini. Відповідай українською.", tokens: 8192, vision: true },
-  "gemini/gemini-2.5-pro": { system: "Ти просунутий AI-помічник Gemini Pro для складних задач.", tokens: 8192, vision: true },
-
-  // --- OPENROUTER ---
-  "openrouter/google/gemini-2.5-pro:free": { system: "Ти безкоштовний Gemini Pro через OpenRouter.", tokens: 4096, vision: true },
-
-  // --- NVIDIA NIM ---
+  
+  // NVIDIA
   "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
   "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
 };
@@ -52,7 +47,7 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v41"; // Оновив версію кешу
+const STORAGE_KEY = "ai-chat-sync-v42"; 
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -62,7 +57,7 @@ let syncTimeout = null;
 
 let state = JSON.parse(
   localStorage.getItem(STORAGE_KEY) ||
-  localStorage.getItem("ai-chat-sync-v40") ||
+  localStorage.getItem("ai-chat-sync-v41") ||
   "null"
 );
 
@@ -71,7 +66,6 @@ if (!state || !Array.isArray(state.chats)) {
 }
 if (!state.theme) state.theme = "dark";
 
-// Налаштування Markdown
 const renderer = new marked.Renderer();
 renderer.code = function(code, language) {
   const validLang = hljs.getLanguage(language) ? language : "plaintext";
@@ -420,7 +414,7 @@ async function sendChatMessage(text, isRetry = false) {
       id: uid(),
       role: "assistant",
       isError: true,
-      content: "Ця модель не підтримує розпізнавання фото. Оберіть модель з позначкою (+Фото) або Vision."
+      content: "Ця модель не підтримує розпізнавання фото. Оберіть іншу модель (наприклад, Gemini Flash або Llama Vision)."
     });
     renderAll();
     setBusy(false, "Помилка");
@@ -548,7 +542,6 @@ async function sendChatMessage(text, isRetry = false) {
   }
 }
 
-// Події
 themeToggleBtn?.addEventListener("click", () => {
   state.theme = state.theme === "light" ? "dark" : "light";
   saveState();
@@ -657,7 +650,6 @@ logoutBtn?.addEventListener("click", async () => {
   renderAuthState();
 });
 
-// Ініціалізація
 applyTheme();
 renderAll();
 autoResize();
