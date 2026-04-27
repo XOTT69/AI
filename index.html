@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  //cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
   
   <script>
@@ -67,11 +67,7 @@
       transition: background 0.3s, color 0.3s;
     }
 
-    .app-container {
-      display: flex;
-      height: 100%;
-      width: 100%;
-    }
+    .app-container { display: flex; height: 100%; width: 100%; }
 
     .sidebar {
       width: 260px;
@@ -84,12 +80,7 @@
       padding-top: env(safe-area-inset-top, 0px);
     }
 
-    .sidebar-header {
-      padding: 12px;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
+    .sidebar-header { padding: 12px; display: flex; gap: 8px; align-items: center; }
 
     .btn-new-chat {
       flex: 1;
@@ -122,11 +113,7 @@
 
     .theme-btn:hover { background: var(--panel); }
 
-    .chat-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px;
-    }
+    .chat-list { flex: 1; overflow-y: auto; padding: 8px; }
 
     .chat-item {
       display: flex;
@@ -162,6 +149,7 @@
     }
 
     .chat-item:hover .chat-item-delete { display: block; }
+
     .chat-item-delete:hover {
       color: var(--danger-text);
       background: var(--danger-bg);
@@ -276,8 +264,6 @@
       cursor: pointer;
       outline: none;
       appearance: none;
-      min-width: 0;
-      max-width: min(100%, 420px);
     }
 
     .model-select option {
@@ -286,9 +272,8 @@
     }
 
     .status-indicator {
-      font-size: 12px;
       color: var(--muted);
-      white-space: nowrap;
+      font-size: 12px;
     }
 
     .chat-container {
@@ -454,10 +439,7 @@
     }
 
     .image-info { flex: 1; }
-    .image-info span {
-      display: block;
-      font-size: 14px;
-    }
+    .image-info span { display: block; font-size: 14px; }
     
     .input-form {
       display: flex;
@@ -486,7 +468,6 @@
       justify-content: center;
       cursor: pointer;
       border-radius: 50%;
-      flex-shrink: 0;
     }
 
     .btn-icon:hover {
@@ -521,7 +502,6 @@
       justify-content: center;
       cursor: pointer;
       margin-bottom: 2px;
-      flex-shrink: 0;
     }
 
     .send-btn:disabled {
@@ -558,21 +538,10 @@
         transform: translateX(-100%);
         box-shadow: 4px 0 24px rgba(0,0,0,0.5);
       }
-
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
-
       .message-wrapper.user .message-content { max-width: 92%; }
       .chat-item-delete { display: block; }
-
-      .topbar-left {
-        gap: 8px;
-      }
-
-      .model-select {
-        font-size: 15px;
-        max-width: 100%;
-      }
     }
   </style>
 </head>
@@ -584,7 +553,7 @@
       <div class="sidebar-header">
         <button type="button" class="btn-new-chat" id="newChatBtn">
           <span>Новий чат</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">e x1="12" y1="5" x2="12" y2="19"></line>e x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
         <button type="button" class="theme-btn" id="themeToggleBtn">☀️</button>
       </div>
@@ -595,7 +564,6 @@
         <div id="authLoggedOut">
           <button type="button" class="btn" id="googleLoginBtn">Увійти (Google)</button>
         </div>
-
         <div id="authLoggedIn" class="hidden">
           <div class="user-info">
             <img id="userAvatar" src="https://placehold.co/40x40/png" alt="Avatar">
@@ -613,21 +581,17 @@
       <header class="topbar">
         <div class="topbar-left">
           <button type="button" class="hamburger-btn" id="hamburgerBtn">☰</button>
-
           <select id="model" class="model-select">
-            <option value="openrouter/deepseek/deepseek-r1:free">DeepSeek R1 (free)</option>
             <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
-            <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash (+фото)</option>
-            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B (NVIDIA)</option>
+            <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash (+Фото)</option>
+            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B</option>
             <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B</option>
-            <option value="google/gemma-3-27b-it">Gemma 3 (+фото)</option>
             <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B</option>
-            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
+            <option value="google/gemma-3-27b-it">Gemma 3 (+Фото)</option>
+            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision (+Фото)</option>
           </select>
-
           <span class="status-indicator hidden" id="statusText">Готово</span>
         </div>
-
         <button type="button" class="btn-icon" id="clearBtn" title="Очистити чат" style="width: 32px; height: 32px; color: var(--danger-text);">🗑️</button>
       </header>
 
@@ -639,25 +603,19 @@
         <div class="input-wrapper-inner">
           <div class="selected-image-bar hidden" id="selectedImageBar">
             <img id="selectedImagePreview" src="" alt="preview">
-            <div class="image-info">
-              <span id="selectedImageName">image.jpg</span>
-            </div>
+            <div class="image-info"><span id="selectedImageName">image.jpg</span></div>
             <button type="button" class="btn-icon" id="removeImageBtn" style="color: var(--danger-text);">✕</button>
           </div>
 
           <form id="chatForm" class="input-form">
             <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp" class="hidden">
-
             <button type="button" class="btn-icon" id="imageBtn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>ircle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
             </button>
-
             <textarea id="prompt" placeholder="Напиши повідомлення..." rows="1"></textarea>
-
             <button type="button" class="btn-icon hidden" id="stopBtn" style="color: var(--danger-text);">⏹</button>
-
             <button type="submit" class="send-btn" id="sendBtn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">e x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
           </form>
         </div>
@@ -665,6 +623,6 @@
     </main>
   </div>
 
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>
