@@ -29,7 +29,6 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co";
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 
-// ЗБІЛЬШЕНО ЛІМІТ ДО 8192 ТОКЕНІВ (щоб писало максимально довго)
 const ALLOWED_MODELS = {
   "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник.", tokens: 8192 },
   "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів.", tokens: 8192 },
@@ -42,18 +41,19 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v30";
+const STORAGE_KEY = "ai-chat-sync-v31";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
 let hasSyncedOnLoad = false;
 
-let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+// Підтягуємо історію зі старої або нової версії
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem("ai-chat-sync-v30") || "null");
 if (!state || !Array.isArray(state.chats)) state = { activeChatId: null, chats: [], theme: "dark" };
 if (!state.theme) state.theme = "dark";
 
-// --- Markdown: Підсвітка, Копіювання та ЗАВАНТАЖЕННЯ КОДУ ---
+// --- Markdown: Підсвітка та Завантаження ---
 const renderer = new marked.Renderer();
 renderer.code = function(code, language) {
   const validLang = hljs.getLanguage(language) ? language : 'plaintext';
@@ -62,7 +62,7 @@ renderer.code = function(code, language) {
             <div class="code-header">
               <span>${validLang}</span>
               <div style="display:flex; gap:12px;">
-                <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Скопіювати</button>
+                <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Копіювати</button>
                 <button class="copy-btn" onclick="downloadCodeBtn(this, '${validLang}')">💾 Файл</button>
               </div>
             </div>
@@ -74,61 +74,48 @@ marked.setOptions({ renderer: renderer, breaks: true, gfm: true });
 window.copyCodeBtn = function(btn) {
   const pre = btn.parentElement.parentElement.nextElementSibling;
   navigator.clipboard.writeText(pre.innerText).then(() => {
-    btn.innerHTML = '✅ Скопійовано';
-    setTimeout(() => btn.innerHTML = '📋 Скопіювати', 2000);
+    btn.innerHTML = '✅'; setTimeout(() => btn.innerHTML = '📋 Копіювати', 2000);
   });
 };
 
-// Функція для збереження коду як файлу
 window.downloadCodeBtn = function(btn, ext) {
   const pre = btn.parentElement.parentElement.nextElementSibling;
-  const code = pre.innerText;
-  const blob = new Blob([code], { type: 'text/plain' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'code.' + (ext !== 'plaintext' ? ext : 'txt');
-  a.click();
+  a.href = URL.createObjectURL(new Blob([pre.innerText], { type: 'text/plain' }));
+  a.download = 'code.' + (ext !== 'plaintext' ? ext : 'txt'); a.click();
 };
 
-// Функція для завантаження всієї відповіді як .txt
 window.downloadFullText = function(msgId) {
-  const active = getActiveChat();
-  if (!active) return;
-  const msg = active.messages.find(m => m.id === msgId);
+  const msg = getActiveChat()?.messages.find(m => m.id === msgId);
   if (!msg) return;
-  const blob = new Blob([msg.content], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'AI_Response.txt';
-  a.click();
+  a.href = URL.createObjectURL(new Blob([msg.content], { type: 'text/plain;charset=utf-8' }));
+  a.download = 'AI_Response.txt'; a.click();
 };
 
 function formatThinking(text) {
   if (!text) return "";
   let processed = text.replace(/<think>/g, '<details class="thought-block"><summary>Думка</summary><div class="thought-content">');
-  processed = processed.replace(/<\/think>/g, '</div></details>');
-  if ((processed.match(/<details/g) || []).length > (processed.match(/<\/details>/g) || []).length) {
-    processed += '</div></details>';
-  }
-  return processed;
+  return processed.replace(/<\/think>/g, '</div></details>');
 }
-
 function renderMarkdown(text) {
   return DOMPurify.sanitize(marked.parse(formatThinking(text)), { ADD_TAGS: ['details', 'summary'] });
 }
 
-// --- БАЗОВІ ФУНКЦІЇ ---
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func(...args), wait); };
+// --- МИТТЄВЕ ЗБЕРЕЖЕННЯ ---
+let syncTimeout = null;
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); // Зберігається МИТТЄВО
+  } catch(e) {
+    if(state.chats.length > 20) { state.chats = state.chats.slice(0, 20); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  }
+  // В хмару відправляємо з затримкою, щоб не спамити API
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(syncCurrentChatToCloud, 2000);
 }
-
-const saveState = debounce(() => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  syncCurrentChatToCloud(); 
-}, 1000);
 
 function getActiveChat() { return state.chats.find(c => c.id === state.activeChatId) || null; }
 
@@ -136,11 +123,7 @@ function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
   if (themeToggleBtn) themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
 }
-themeToggleBtn?.addEventListener("click", () => {
-  state.theme = state.theme === "light" ? "dark" : "light";
-  saveState(); applyTheme();
-});
-
+themeToggleBtn?.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; saveState(); applyTheme(); });
 hamburgerBtn?.addEventListener("click", () => { sidebar.classList.add("open"); mobileOverlay.classList.add("show"); });
 mobileOverlay?.addEventListener("click", () => { sidebar.classList.remove("open"); mobileOverlay.classList.remove("show"); });
 
@@ -148,19 +131,14 @@ function ensureChat() {
   let active = getActiveChat();
   if (!active) {
     active = { id: uid(), title: "Новий чат", messages: [], createdAt: Date.now() };
-    state.chats.unshift(active);
-    state.activeChatId = active.id;
-    saveState();
+    state.chats.unshift(active); state.activeChatId = active.id; saveState();
   }
   return active;
 }
 
 function renderAuthState() {
   if (!authLoggedOut || !authLoggedIn) return;
-  if (!currentUser) {
-    authLoggedOut.classList.remove("hidden"); authLoggedIn.classList.add("hidden");
-    return;
-  }
+  if (!currentUser) { authLoggedOut.classList.remove("hidden"); authLoggedIn.classList.add("hidden"); return; }
   authLoggedOut.classList.add("hidden"); authLoggedIn.classList.remove("hidden");
   const meta = currentUser.user_metadata || {};
   if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
@@ -174,9 +152,7 @@ function renderChatList() {
   for (const item of state.chats) {
     const div = document.createElement("div");
     div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
-    div.innerHTML = `<div class="chat-item-title">${item.title || "Новий чат"}</div>
-                     <button class="chat-item-delete">✕</button>`;
-    
+    div.innerHTML = `<div class="chat-item-title">${item.title || "Новий чат"}</div><button class="chat-item-delete">✕</button>`;
     div.querySelector('.chat-item-delete').onclick = async (e) => {
       e.stopPropagation();
       if (confirm("Видалити чат?")) {
@@ -188,97 +164,63 @@ function renderChatList() {
     };
     div.onclick = () => {
       if (requestInFlight) return;
-      state.activeChatId = item.id;
-      saveState(); renderAll();
+      state.activeChatId = item.id; saveState(); renderAll();
       sidebar.classList.remove("open"); mobileOverlay.classList.remove("show");
     };
     chatList.appendChild(div);
   }
 }
 
-// --- СИНХРОНІЗАЦІЯ З SUPABASE ---
 async function syncCurrentChatToCloud() {
   if (!currentUser || !sb) return;
-  const active = getActiveChat();
-  if (!active) return;
-  try {
-    await sb.from('chats').upsert({
-      id: active.id, user_id: currentUser.id, title: active.title, messages: active.messages, updated_at: new Date().toISOString()
-    });
-  } catch(e) { console.error("Sync Error:", e); }
+  const active = getActiveChat(); if (!active) return;
+  try { await sb.from('chats').upsert({ id: active.id, user_id: currentUser.id, title: active.title, messages: active.messages, updated_at: new Date().toISOString() }); } catch(e) {}
 }
 
 async function loadAllChatsFromCloud() {
   if (!currentUser || !sb || hasSyncedOnLoad) return;
   try {
     const { data, error } = await sb.from('chats').select('*').eq('user_id', currentUser.id).order('updated_at', { ascending: false });
-    if (error) throw error;
-    if (data && data.length > 0) {
-      state.chats = data.map(d => ({
-        id: d.id, title: d.title, messages: d.messages || [], createdAt: new Date(d.created_at || d.updated_at).getTime()
-      }));
+    if (!error && data && data.length > 0) {
+      state.chats = data.map(d => ({ id: d.id, title: d.title, messages: d.messages || [], createdAt: new Date(d.created_at || d.updated_at).getTime() }));
       if (!state.chats.find(c => c.id === state.activeChatId)) state.activeChatId = state.chats[0].id;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      renderAll();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); renderAll();
     }
     hasSyncedOnLoad = true;
-  } catch(e) { console.error("Load Error", e); }
+  } catch(e) {}
 }
 
 window.retryMessage = function() {
-  const active = getActiveChat();
-  if (!active) return;
-  active.messages.pop(); 
-  const lastUserMsg = active.messages[active.messages.length - 1];
+  const active = getActiveChat(); if (!active) return;
+  active.messages.pop(); const lastUserMsg = active.messages[active.messages.length - 1];
   if (lastUserMsg) sendChatMessage(lastUserMsg.content, true);
 };
 
 function renderMessages() {
-  const active = ensureChat();
-  if (!chat) return;
+  const active = ensureChat(); if (!chat) return;
   chat.innerHTML = "";
-
-  if (!active.messages.length) {
-    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`;
-    return;
-  }
+  if (!active.messages.length) { chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`; return; }
 
   for (const msg of active.messages) {
     const wrapper = document.createElement("div");
     wrapper.className = `message-wrapper ${msg.role}`;
-    
     const inner = document.createElement("div");
     inner.className = "message-content";
     
     if (msg.isError) {
       inner.innerHTML = `<div style="background:var(--danger-bg); color:var(--danger-text); padding:12px; border-radius:12px; border:1px solid var(--danger-text);">
-        <strong>Помилка:</strong> ${msg.content}<br>
-        <button class="btn" style="margin-top:10px; width:auto; border-color:var(--danger-text); color:var(--danger-text);" onclick="retryMessage()">🔄 Повторити</button>
-      </div>`;
+        <strong>Помилка:</strong> ${msg.content}<br><button class="btn" style="margin-top:10px; width:auto; border-color:var(--danger-text); color:var(--danger-text);" onclick="retryMessage()">🔄 Повторити</button></div>`;
     } else if (msg.role === "assistant") {
       inner.innerHTML = renderMarkdown(msg.content || "");
-      
-      // Додаємо кнопку "Завантажити як файл" для повідомлень від ШІ
-      const downloadBtn = document.createElement("button");
-      downloadBtn.className = "btn";
-      downloadBtn.innerHTML = "💾 Завантажити відповідь (.txt)";
+      const downloadBtn = document.createElement("button"); downloadBtn.className = "btn"; downloadBtn.innerHTML = "💾 Завантажити (.txt)";
       downloadBtn.style.cssText = "margin-top: 12px; font-size: 12px; width: auto; padding: 6px 12px; background: transparent; border: 1px solid var(--border); color: var(--muted);";
-      downloadBtn.onclick = () => downloadFullText(msg.id);
-      inner.appendChild(downloadBtn);
-
-    } else {
-      inner.textContent = msg.content || "";
-    }
+      downloadBtn.onclick = () => downloadFullText(msg.id); inner.appendChild(downloadBtn);
+    } else { inner.textContent = msg.content || ""; }
 
     if (msg.image?.dataUrl) {
-      const img = document.createElement("img");
-      img.src = msg.image.dataUrl;
-      img.className = "inline-preview-image";
-      inner.appendChild(img);
+      const img = document.createElement("img"); img.src = msg.image.dataUrl; img.className = "inline-preview-image"; inner.appendChild(img);
     }
-    
-    wrapper.appendChild(inner);
-    chat.appendChild(wrapper);
+    wrapper.appendChild(inner); chat.appendChild(wrapper);
   }
   chat.scrollTop = chat.scrollHeight;
 }
@@ -291,38 +233,26 @@ function renderAll() {
   }
 }
 
-function autoResize() {
-  if (!promptInput) return;
-  promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + "px";
-}
+function autoResize() { if (!promptInput) return; promptInput.style.height = "auto"; promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + "px"; }
 
 function updateSelectedImageUI() {
   if (!selectedImageBar || !selectedImagePreview) return;
   if (!selectedImage) { selectedImageBar.classList.add("hidden"); selectedImagePreview.removeAttribute("src"); return; }
-  selectedImageBar.classList.remove("hidden");
-  if(selectedImageName) selectedImageName.textContent = selectedImage.name || "Зображення";
+  selectedImageBar.classList.remove("hidden"); if(selectedImageName) selectedImageName.textContent = selectedImage.name || "Зображення";
   selectedImagePreview.src = selectedImage.dataUrl;
 }
 
-function clearSelectedImage() {
-  selectedImage = null;
-  if (imageInput) imageInput.value = "";
-  updateSelectedImageUI();
-}
+function clearSelectedImage() { selectedImage = null; if (imageInput) imageInput.value = ""; updateSelectedImageUI(); }
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
-    reader.readAsDataURL(file);
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Не вдалося прочитати файл")); reader.readAsDataURL(file);
   });
 }
 
 function setBusy(isBusy) { requestInFlight = isBusy; renderAll(); }
 
-// --- ГОЛОВНА ФУНКЦІЯ ---
 async function sendChatMessage(text, isRetry = false) {
   if (requestInFlight) return;
   const active = ensureChat();
@@ -332,6 +262,7 @@ async function sendChatMessage(text, isRetry = false) {
     if (active.messages.length === 1) active.title = text.slice(0, 30) || "Новий чат";
     if (active.messages.length > 50) active.messages = active.messages.slice(-50); 
     promptInput.value = ""; autoResize(); clearSelectedImage();
+    saveState(); // МИТТЄВО ЗБЕРІГАЄМО ПОВІДОМЛЕННЯ ЮЗЕРА
   }
 
   const assistantMsg = { id: uid(), role: "assistant", content: "", createdAt: Date.now() };
@@ -345,126 +276,64 @@ async function sendChatMessage(text, isRetry = false) {
   const recent = active.messages.slice(-15).filter(m => m.id !== assistantMsg.id && !m.isError);
 
   if (selectedImage?.dataUrl && modelId.includes("gemma-3")) {
-    safeMessages.push({
-      role: "user",
-      content: [{ type: "text", text: text || "Що на фото?" }, { type: "image_url", image_url: { url: selectedImage.dataUrl } }]
-    });
+    safeMessages.push({ role: "user", content: [{ type: "text", text: text || "Що на фото?" }, { type: "image_url", image_url: { url: selectedImage.dataUrl } }] });
   } else {
     recent.forEach(m => { safeMessages.push({ role: m.role, content: m.content }); });
   }
 
-  const controller = new AbortController();
-  currentController = controller;
+  const controller = new AbortController(); currentController = controller;
 
   try {
     const response = await fetch("/api/proxy", {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
       body: JSON.stringify({ model: modelId, messages: safeMessages, temperature: 0.3, max_tokens: modelConf.tokens, top_p: 0.9, stream: true })
     });
-
     if (!response.ok) throw new Error(`${response.status}`);
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-
-    const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content");
-    const targetEl = msgEls[msgEls.length - 1];
+    const reader = response.body.getReader(); const decoder = new TextDecoder("utf-8"); let buffer = "";
+    const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content"); const targetEl = msgEls[msgEls.length - 1];
 
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true }); const parts = buffer.split("\n\n"); buffer = parts.pop() || "";
 
       for (const part of parts) {
         const lines = part.split("\n");
         for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const dataStr = line.slice(5).trim();
-          if (dataStr === "[DONE]") continue;
-
+          if (!line.startsWith("data:")) continue; const dataStr = line.slice(5).trim(); if (dataStr === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(dataStr);
-            const delta = parsed?.choices?.[0]?.delta?.content || "";
+            const parsed = JSON.parse(dataStr); const delta = parsed?.choices?.[0]?.delta?.content || "";
             if (delta) {
               assistantMsg.content += delta;
-              if (targetEl) {
-                // Перемальовуємо, тимчасово ігноруючи кнопку завантаження (вона додасться в renderMessages після завершення стріму)
-                targetEl.innerHTML = renderMarkdown(assistantMsg.content);
-                chat.scrollTop = chat.scrollHeight;
-              }
+              if (targetEl) { targetEl.innerHTML = renderMarkdown(assistantMsg.content); chat.scrollTop = chat.scrollHeight; }
             }
           } catch (_) {}
         }
       }
     }
   } catch (e) {
-    if (e?.name === "AbortError") {
-      assistantMsg.content += "\n\n*[Зупинено]*";
-    } else {
-      active.messages.pop(); 
-      active.messages.push({ id: uid(), role: "assistant", isError: true, content: e.message });
-    }
+    if (e?.name === "AbortError") { assistantMsg.content += "\n\n*[Зупинено]*"; } 
+    else { active.messages.pop(); active.messages.push({ id: uid(), role: "assistant", isError: true, content: e.message }); }
   } finally {
     currentController = null;
-    saveState(); setBusy(false);
+    saveState(); // МИТТЄВО ЗБЕРІГАЄМО ПОВІДОМЛЕННЯ АСИСТЕНТА ПІСЛЯ ЗАВЕРШЕННЯ
+    setBusy(false);
   }
 }
 
-form?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = promptInput?.value.trim();
-  if (text || selectedImage) sendChatMessage(text);
-});
-
-promptInput?.addEventListener("input", autoResize);
-promptInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form?.requestSubmit(); }
-});
-
+form?.addEventListener("submit", (e) => { e.preventDefault(); const text = promptInput?.value.trim(); if (text || selectedImage) sendChatMessage(text); });
+promptInput?.addEventListener("input", autoResize); promptInput?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form?.requestSubmit(); } });
 stopBtn?.addEventListener("click", () => currentController?.abort());
-clearBtn?.addEventListener("click", () => {
-  const active = ensureChat();
-  if (confirm("Очистити історію?")) { active.messages = []; active.title = "Новий чат"; saveState(); renderAll(); }
-});
+clearBtn?.addEventListener("click", () => { const active = ensureChat(); if (confirm("Очистити історію?")) { active.messages = []; active.title = "Новий чат"; saveState(); renderAll(); } });
 newChatBtn?.addEventListener("click", () => { state.activeChatId = null; ensureChat(); renderAll(); sidebar.classList.remove("open"); mobileOverlay.classList.remove("show"); });
-
 imageBtn?.addEventListener("click", () => imageInput?.click());
-imageInput?.addEventListener("change", async () => {
-  const file = imageInput.files?.[0];
-  if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { alert("Максимальний розмір: 5 МБ."); imageInput.value = ""; return; }
-  try {
-    const dataUrl = await fileToDataUrl(file);
-    selectedImage = { name: file.name, type: file.type, dataUrl };
-    updateSelectedImageUI();
-  } catch (e) { alert("Помилка фото"); }
-});
+imageInput?.addEventListener("change", async () => { const file = imageInput.files?.[0]; if (!file) return; if (file.size > 5 * 1024 * 1024) { alert("Максимальний розмір: 5 МБ."); imageInput.value = ""; return; } try { const dataUrl = await fileToDataUrl(file); selectedImage = { name: file.name, type: file.type, dataUrl }; updateSelectedImageUI(); } catch (e) {} });
 removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-sb?.auth.onAuthStateChange((_event, session) => { 
-  currentUser = session?.user || null; 
-  renderAuthState();
-  if (currentUser) loadAllChatsFromCloud(); 
-});
+sb?.auth.onAuthStateChange((_event, session) => { currentUser = session?.user || null; renderAuthState(); if (currentUser) loadAllChatsFromCloud(); });
+sb?.auth.getSession().then(({ data }) => { currentUser = data?.session?.user || null; renderAuthState(); if (currentUser) loadAllChatsFromCloud(); }).catch(() => {});
 
-sb?.auth.getSession().then(({ data }) => { 
-  currentUser = data?.session?.user || null; 
-  renderAuthState();
-  if (currentUser) loadAllChatsFromCloud(); 
-}).catch(() => {});
-
-googleLoginBtn?.addEventListener("click", async () => {
-  if (!sb) { alert("Supabase не підключено"); return; }
-  await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" } });
-});
-
-logoutBtn?.addEventListener("click", async () => {
-  if (!sb) return;
-  await sb.auth.signOut(); currentUser = null; hasSyncedOnLoad = false; renderAuthState();
-});
+googleLoginBtn?.addEventListener("click", async () => { if (!sb) return; await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/" } }); });
+logoutBtn?.addEventListener("click", async () => { if (!sb) return; await sb.auth.signOut(); currentUser = null; hasSyncedOnLoad = false; renderAuthState(); });
 
 applyTheme(); renderAll(); autoResize(); updateSelectedImageUI();
