@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'edge', // Edge-середовище Vercel для ідеального стрімінгу
+  runtime: 'edge', // Edge-середовище Vercel
 };
 
 export default async function handler(req) {
@@ -9,7 +9,7 @@ export default async function handler(req) {
 
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   if (!nvidiaKey) {
-    return new Response(JSON.stringify({ error: "Missing NVIDIA API Key in Vercel Env" }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Missing NVIDIA API Key" }), { status: 500 });
   }
 
   try {
@@ -26,7 +26,8 @@ export default async function handler(req) {
     });
 
     if (!response.ok) {
-      return new Response(await response.text(), { status: response.status });
+      const errorText = await response.text();
+      return new Response(errorText, { status: response.status });
     }
 
     return new Response(response.body, {
