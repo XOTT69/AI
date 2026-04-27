@@ -29,15 +29,19 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 let supaUrl = "https://dfvlipfcblnnuxylhzis.supabase.co"; 
 let supaKey = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF"; 
 
-// ТІЛЬКИ 100% ПРАЦЮЮЧІ МОДЕЛІ
+// ВІДНОВЛЕНО ВСІ МОДЕЛІ (Включаючи DeepSeek R1, Qwen та Dracarys)
 const ALLOWED_MODELS = {
-  // Groq
+  // Розумні (OpenRouter + NVIDIA)
+  "openrouter/deepseek/deepseek-r1:free": { system: "Ти надзвичайно розумний AI (DeepSeek R1). Відповідай українською.", tokens: 8192, vision: false },
+  "qwen/qwen3.5-122b-a10b": { system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.", tokens: 4096, vision: false },
+  "abacusai/dracarys-llama-3.1-70b-instruct": { system: "Ти AI-помічник для програмування. Відповідай українською.", tokens: 4096, vision: false },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
+
+  // Швидкі (Groq + Gemini)
   "groq/llama-3.3-70b-versatile": { system: "Ти блискавичний AI-помічник. Відповідай українською.", tokens: 8192, vision: false },
-  
-  // Google
   "gemini/gemini-2.5-flash": { system: "Ти сучасний AI-помічник Gemini. Відповідай українською.", tokens: 8192, vision: true },
   
-  // NVIDIA
+  // NVIDIA NIM (Базові)
   "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
   "meta/llama-3.3-70b-instruct": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
 };
@@ -47,7 +51,7 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v42"; 
+const STORAGE_KEY = "ai-chat-sync-v43"; 
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -57,7 +61,7 @@ let syncTimeout = null;
 
 let state = JSON.parse(
   localStorage.getItem(STORAGE_KEY) ||
-  localStorage.getItem("ai-chat-sync-v41") ||
+  localStorage.getItem("ai-chat-sync-v42") ||
   "null"
 );
 
@@ -405,8 +409,8 @@ async function sendChatMessage(text, isRetry = false) {
   renderAll();
   setBusy(true, "Генерація...");
 
-  const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
+  const modelId = modelSelect?.value || "openrouter/deepseek/deepseek-r1:free";
+  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["openrouter/deepseek/deepseek-r1:free"];
 
   if (selectedImage && !modelConf.vision && !isRetry) {
     active.messages.pop();
