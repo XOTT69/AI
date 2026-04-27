@@ -12,7 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
   
   <style>
-    /* ІДЕАЛЬНА ТЕМА В СТИЛІ CHATGPT */
+    /* ТЕМА В СТИЛІ CHATGPT */
     :root {
       --bg: #212121;
       --sidebar: #171717;
@@ -20,7 +20,7 @@
       --panel-hover: #3a3a3a;
       --text: #ececec;
       --muted: #b4b4b4;
-      --accent: #10a37f; /* Зелений колір ChatGPT */
+      --accent: #10a37f;
       --danger-bg: rgba(239,68,68,0.15);
       --danger-text: #f87171;
       --border: rgba(255,255,255,0.1);
@@ -44,18 +44,21 @@
     html, body {
       margin: 0; padding: 0; background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100dvh; overflow: hidden; overscroll-behavior: none; /* Заборона "пружини" на iOS */
+      height: 100%; /* Змінено з 100dvh на 100% для стабільності на мобілках */
+      width: 100%;
+      overflow: hidden; overscroll-behavior: none;
       transition: background 0.3s, color 0.3s;
     }
 
-    .app-container { display: flex; height: 100dvh; width: 100vw; }
+    .app-container { display: flex; height: 100%; width: 100vw; position: absolute; top: 0; left: 0; bottom: 0; right: 0; }
 
     /* БОКОВА ПАНЕЛЬ */
     .sidebar {
       width: 260px; background: var(--sidebar);
       display: flex; flex-direction: column; flex-shrink: 0;
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 100; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+      z-index: 100; 
+      padding-top: env(safe-area-inset-top, 0px);
     }
 
     .sidebar-header { padding: 12px; display: flex; gap: 8px; align-items: center; }
@@ -73,7 +76,7 @@
     .chat-item:hover .chat-item-delete { display: block; }
     .chat-item-delete:hover { color: var(--danger-text); background: var(--danger-bg); }
 
-    .sidebar-footer { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-footer { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
     .user-info { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
     .user-info img { width: 32px; height: 32px; border-radius: 50%; }
     .user-details { overflow: hidden; }
@@ -96,7 +99,7 @@
     .model-select option { background: var(--bg); color: var(--text); }
 
     /* ЧАТ ТА ПОВІДОМЛЕННЯ */
-    .chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; padding-bottom: 20px; }
+    .chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; padding-bottom: 10px; }
     .chat-empty { margin: auto; color: var(--muted); font-size: 15px; font-weight: 500; }
     
     .message-wrapper { width: 100%; max-width: 800px; padding: 16px; display: flex; }
@@ -105,27 +108,16 @@
 
     .message-content {
       font-size: 15px; line-height: 1.6; max-width: 100%;
-      /* ФІКС: щоб довгі слова чи код без пробілів не розтягували блок */
       overflow-wrap: anywhere; word-break: break-word;
     }
 
-    .message-wrapper.user .message-content {
-      background: var(--panel);
-      padding: 12px 18px;
-      border-radius: 20px;
-      max-width: 85%;
-    }
-
-    .message-wrapper.assistant .message-content {
-      width: 100%;
-      padding-right: 16px; /* Відступ від правого краю */
-    }
+    .message-wrapper.user .message-content { background: var(--panel); padding: 12px 18px; border-radius: 20px; max-width: 85%; }
+    .message-wrapper.assistant .message-content { width: 100%; padding-right: 16px; }
 
     .message-content p { margin: 0 0 16px 0; }
     .message-content p:last-child { margin: 0; }
     .inline-preview-image { max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px; object-fit: contain; }
 
-    /* ПРОЦЕС ДУМКИ (THINKING) */
     .thought-block { background: transparent; border-left: 2px solid var(--border); padding-left: 14px; margin-bottom: 16px; font-size: 14px; color: var(--muted); }
     .thought-block summary { cursor: pointer; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px; outline: none; }
     .thought-block summary::-webkit-details-marker { display: none; }
@@ -133,40 +125,45 @@
     .thought-block[open] summary::before { transform: rotate(90deg); }
     .thought-content { margin-top: 12px; }
 
-    /* КОПІЮВАННЯ КОДУ ТА ПІДСВІТКА */
     .code-block { position: relative; margin: 16px 0; border-radius: 8px; overflow: hidden; background: #0d1117; }
     .code-header { display: flex; justify-content: space-between; align-items: center; background: #161b22; padding: 6px 12px; font-size: 12px; color: #8b949e; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .copy-btn { background: transparent; border: none; color: #8b949e; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 12px; transition: color 0.2s; }
     .copy-btn:hover { color: #fff; }
     .code-block pre { margin: 0; padding: 16px; overflow-x: auto; color: #c9d1d9; font-size: 14px; }
 
-    /* ПОЛЕ ВВОДУ */
-    .input-container { width: 100%; max-width: 800px; margin: 0 auto; padding: 0 16px 16px 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+    /* ПОЛЕ ВВОДУ - ВИПРАВЛЕНО ВІДСТУПИ */
+    .input-container { 
+      width: 100%; 
+      max-width: 800px; 
+      margin: 0 auto; 
+      padding: 8px 16px; /* Зменшено вертикальні відступи */
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); /* Опущено нижче */
+      background: var(--bg);
+    }
     
     .selected-image-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--panel); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border); }
     .selected-image-bar img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
     .image-info { flex: 1; }
     .image-info span { display: block; font-size: 14px; }
     
-    .input-form { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 8px 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    .input-form { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 6px 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     [data-theme="light"] .input-form { box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
 
     .btn-icon { background: transparent; border: none; color: var(--muted); font-size: 20px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 50%; transition: background 0.2s; }
     .btn-icon:hover { background: var(--panel-hover); color: var(--text); }
     
-    .input-form textarea { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 15px; resize: none; padding: 8px 0; max-height: 200px; outline: none; }
+    .input-form textarea { flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit; font-size: 15px; resize: none; padding: 8px 0; max-height: 150px; outline: none; }
     .input-form textarea::placeholder { color: var(--muted); }
 
-    .send-btn { background: var(--text); color: var(--bg); border: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.2s; }
+    .send-btn { background: var(--text); color: var(--bg); border: none; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.2s; margin-bottom: 2px; }
     .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-    /* ОВЕРЛЕЙ */
     .hidden { display: none !important; }
     .mobile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .mobile-overlay.show { opacity: 1; pointer-events: auto; }
 
     @media (max-width: 768px) {
-      .sidebar { position: fixed; top: 0; left: 0; height: 100dvh; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+      .sidebar { position: fixed; top: 0; left: 0; height: 100%; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
       .message-wrapper.user .message-content { max-width: 92%; }
@@ -202,7 +199,7 @@
               <div id="userEmail" class="user-email">email@example.com</div>
             </div>
           </div>
-          <button type="button" class="btn" id="syncBtn">🔄 Синхронізувати</button>
+          <!-- Кнопку синхронізації сховано, бо тепер вона автоматична -->
           <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
         </div>
       </div>
@@ -214,9 +211,9 @@
           <button type="button" class="hamburger-btn" id="hamburgerBtn">☰</button>
           <select id="model" class="model-select">
             <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B</option>
-            <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B (Розумна)</option>
-            <option value="google/gemma-3-27b-it">Gemma 3 (Фото)</option>
-            <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B (Код)</option>
+            <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B</option>
+            <option value="google/gemma-3-27b-it">Gemma 3</option>
+            <option value="abacusai/dracarys-llama-3.1-70b-instruct">Dracarys 70B</option>
           </select>
           <span class="status-indicator hidden" id="statusText">Готово</span>
         </div>
