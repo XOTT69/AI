@@ -12,7 +12,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
   
   <style>
-    /* ТЕМА В СТИЛІ CHATGPT */
     :root {
       --bg: #212121;
       --sidebar: #171717;
@@ -44,21 +43,17 @@
     html, body {
       margin: 0; padding: 0; background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100%; /* Змінено з 100dvh на 100% для стабільності на мобілках */
-      width: 100%;
-      overflow: hidden; overscroll-behavior: none;
+      height: 100%; width: 100%; overflow: hidden; overscroll-behavior: none;
       transition: background 0.3s, color 0.3s;
     }
 
     .app-container { display: flex; height: 100%; width: 100vw; position: absolute; top: 0; left: 0; bottom: 0; right: 0; }
 
-    /* БОКОВА ПАНЕЛЬ */
     .sidebar {
       width: 260px; background: var(--sidebar);
       display: flex; flex-direction: column; flex-shrink: 0;
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 100; 
-      padding-top: env(safe-area-inset-top, 0px);
+      z-index: 100; padding-top: env(safe-area-inset-top, 0px);
     }
 
     .sidebar-header { padding: 12px; display: flex; gap: 8px; align-items: center; }
@@ -88,7 +83,6 @@
     .btn.danger { color: var(--danger-text); border-color: var(--danger-bg); background: transparent; }
     .btn.danger:hover { background: var(--danger-bg); }
 
-    /* ГОЛОВНА ЗОНА */
     .main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
     
     .topbar { padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 10; flex-shrink: 0; border-bottom: 1px solid var(--border); }
@@ -98,7 +92,6 @@
     .model-select { background: transparent; color: var(--muted); border: none; font-size: 16px; font-weight: 500; cursor: pointer; outline: none; appearance: none; }
     .model-select option { background: var(--bg); color: var(--text); }
 
-    /* ЧАТ ТА ПОВІДОМЛЕННЯ */
     .chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; padding-bottom: 10px; }
     .chat-empty { margin: auto; color: var(--muted); font-size: 15px; font-weight: 500; }
     
@@ -106,11 +99,7 @@
     .message-wrapper.user { justify-content: flex-end; }
     .message-wrapper.assistant { justify-content: flex-start; }
 
-    .message-content {
-      font-size: 15px; line-height: 1.6; max-width: 100%;
-      overflow-wrap: anywhere; word-break: break-word;
-    }
-
+    .message-content { font-size: 15px; line-height: 1.6; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .message-wrapper.user .message-content { background: var(--panel); padding: 12px 18px; border-radius: 20px; max-width: 85%; }
     .message-wrapper.assistant .message-content { width: 100%; padding-right: 16px; }
 
@@ -131,13 +120,10 @@
     .copy-btn:hover { color: #fff; }
     .code-block pre { margin: 0; padding: 16px; overflow-x: auto; color: #c9d1d9; font-size: 14px; }
 
-    /* ПОЛЕ ВВОДУ - ВИПРАВЛЕНО ВІДСТУПИ */
+    /* ПОЛЕ ВВОДУ ДЛЯ ПК */
     .input-container { 
-      width: 100%; 
-      max-width: 800px; 
-      margin: 0 auto; 
-      padding: 8px 16px; /* Зменшено вертикальні відступи */
-      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); /* Опущено нижче */
+      width: 100%; max-width: 800px; margin: 0 auto; 
+      padding: 8px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); 
       background: var(--bg);
     }
     
@@ -162,7 +148,27 @@
     .mobile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     .mobile-overlay.show { opacity: 1; pointer-events: auto; }
 
+    /* ІДЕАЛЬНИЙ ФІКС ДЛЯ АЙФОНА (POSITION FIXED) */
     @media (max-width: 768px) {
+      .input-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+        background-color: var(--bg);
+        border-top: 1px solid var(--border);
+        padding: 10px 16px;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+        z-index: 1000;
+      }
+      
+      .chat-container {
+        padding-bottom: 120px; /* Щоб повідомлення не ховались під фіксованим полем */
+      }
+
       .sidebar { position: fixed; top: 0; left: 0; height: 100%; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
       .sidebar.open { transform: translateX(0); }
       .hamburger-btn { display: block; }
@@ -199,7 +205,6 @@
               <div id="userEmail" class="user-email">email@example.com</div>
             </div>
           </div>
-          <!-- Кнопку синхронізації сховано, бо тепер вона автоматична -->
           <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
         </div>
       </div>
