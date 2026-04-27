@@ -6,18 +6,14 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
-// 1. Карта моделей для NVIDIA
 const NVIDIA_MODEL_MAP = {
   "google/gemma-3-27b-it": "google/gemma-3-27b-it",
   "meta/llama-3.2-90b-vision-instruct": "meta/llama-3.2-90b-vision-instruct",
   "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct"
 };
 
-// 2. Карта моделей для OpenRouter
 const OPENROUTER_MODEL_MAP = {
-  // Використовуємо :free тег, він гарантує маршрутизацію тільки на робочі безкоштовні ноди, 
-  // які точно підтримують chat/completions
-  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct:free" 
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct"
 };
 
 function getProviderConfig(model) {
@@ -25,7 +21,6 @@ function getProviderConfig(model) {
     throw new Error("Model is required");
   }
 
-  // GROQ
   if (model.startsWith("groq/")) {
     return {
       provider: "groq",
@@ -35,7 +30,6 @@ function getProviderConfig(model) {
     };
   }
 
-  // GEMINI
   if (model.startsWith("gemini/")) {
     return {
       provider: "gemini",
@@ -45,17 +39,15 @@ function getProviderConfig(model) {
     };
   }
 
-  // OPENROUTER
   if (OPENROUTER_MODEL_MAP[model]) {
     return {
       provider: "openrouter",
       apiKey: process.env.OPENROUTER_API_KEY,
       url: "https://openrouter.ai/api/v1/chat/completions",
-      model: OPENROUTER_MODEL_MAP[model] 
+      model: OPENROUTER_MODEL_MAP[model]
     };
   }
 
-  // NVIDIA
   if (NVIDIA_MODEL_MAP[model]) {
     return {
       provider: "nvidia",
@@ -86,6 +78,7 @@ function sanitizeMessages(messages) {
                   text: typeof part.text === "string" ? part.text : ""
                 };
               }
+
               if (part.type === "image_url" && part.image_url?.url) {
                 return {
                   type: "image_url",
@@ -94,11 +87,13 @@ function sanitizeMessages(messages) {
                   }
                 };
               }
+
               return null;
             })
             .filter(Boolean)
         };
       }
+
       return {
         role: m.role,
         content: typeof m.content === "string" ? m.content : ""
@@ -147,44 +142,51 @@ export default async function handler(req, res) {
       stream
     };
 
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${cfg.apiKey}`
-    };
-    
-    // Специфічні налаштування для OpenRouter, щоб уникати битих нод (як Novita)
-    if (cfg.provider === "openrouter") {
-       headers["HTTP-Referer"] = "https://ai-chat.com"; 
-       headers["X-Title"] = "AI Chat";
-       // Вимикаємо fallback на платні або нестандартні роутери, якщо ми просимо free
-       payload.route = "fallback";
-    }
-
     if (cfg.provider === "groq") {
       payload.max_completion_tokens = max_tokens;
     } else {
       payload.max_tokens = max_tokens;
     }
 
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${cfg.apiKey}`
+    };
+
+    if (cfg.provider === "openrouter") {
+      headers["HTTP-Referer"] = "https://your-app.example";
+      headers["X-Title"] = "AI Chat";
+    }
+
     const upstream = await fetch(cfg.url, {
       method: "POST",
-      headers: headers,
+      headers,
       body: JSON.stringify(payload)
     });
 
     if (!upstream.ok) {
       const raw = await upstream.text().catch(() => "");
       let parsed = null;
-      try { parsed = JSON.parse(raw); } catch (_) {}
 
-      // Робимо помилку більш читабельною, якщо це OpenRouter
-      let errorMessage = parsed?.error?.message || parsed?.error || raw || `Upstream error ${upstream.status}`;
-      if (typeof errorMessage === 'object') errorMessage = JSON.stringify(errorMessage);
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_) {}
+
+      let message =
+        parsed?.error?.message ||
+        parsed?.error ||
+        raw ||
+        `Upstream error ${upstream.status}`;
+
+      if (typeof message === "object") {
+        message = JSON.stringify(message);
+      }
 
       return json(res, upstream.status, {
-        error: errorMessage,
+        error: message,
         provider: cfg.provider,
-        model: cfg.model
+        model: cfg.model,
+        details: raw
       });
     }
 
@@ -200,7 +202,9 @@ export default async function handler(req, res) {
     });
 
     if (!upstream.body) {
-      res.write(`data: ${JSON.stringify({ error: { message: "Empty upstream body" } })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        error: { message: "Empty upstream body" }
+      })}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
       return;
