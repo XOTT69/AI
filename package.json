@@ -2,5 +2,8 @@
   "name": "nvidia-ai-chat-site",
   "version": "1.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
+  }
 }
