@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const GROQ_KEY = process.env.GROQ_API_KEY;
-  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY; // Використовуємо OpenRouter для стабільного зору
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY; 
   
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
@@ -32,8 +32,8 @@ export default async function handler(req, res) {
     if (userText.trim() === '/start' || userText.trim() === '/help') {
       const helpText = `👋 **Привіт! Я твій універсальний AI-помічник.**\n\n` +
                        `**Що я вмію:**\n` +
-                       `• Писати тексти і спілкуватися 📝 (через Llama 3.3)\n` +
-                       `• Розпізнавати **фотографії** 🖼️ (через Qwen Vision)\n` +
+                       `• Писати тексти і спілкуватися 📝\n` +
+                       `• Розпізнавати **фотографії** 🖼️\n` +
                        `• Читати **PDF-документи** та текстові файли (.txt, код) 📄\n` +
                        `• Пам'ятати контекст розмови 🧠\n\n` +
                        `🧹 /clear — Очистити пам'ять і почати з чистого аркуша.`;
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     let replyText = "";
 
     // ==========================================
-    // ЛОГІКА ДЛЯ ФОТО (OPENROUTER QWEN VISION)
+    // ЛОГІКА ДЛЯ ФОТО (OPENROUTER: NVIDIA NEMOTRON VL)
     // ==========================================
     if (message.photo && message.photo.length > 0) {
       const fileId = message.photo[message.photo.length - 1].file_id;
@@ -85,22 +85,23 @@ export default async function handler(req, res) {
         const arrayBuffer = await imgRes.arrayBuffer();
         const base64Image = Buffer.from(arrayBuffer).toString('base64');
         
-        // Відправляємо запит до OpenRouter (Qwen Vision 72B - стабільна і безкоштовна)
+        // Відправляємо запит до OpenRouter (NVIDIA Nemotron 12B VL)
         const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { 
             "Authorization": `Bearer ${OPENROUTER_KEY}`, 
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://telegram-bot",
+            "HTTP-Referer": "https://telegram-bot.vercel.app",
             "X-Title": "TG Bot"
           },
           body: JSON.stringify({
-            model: "qwen/qwen-2.5-vl-72b-instruct:free",
+            model: "nvidia/nemotron-nano-12b-v2-vl:free",
+            route: "fallback", // Надійніший роутинг
             messages: [
               {
                 role: "user",
                 content: [
-                  { type: "text", text: `Ти професійний AI-асистент. Відповідай українською. Запитання: ${userText}` },
+                  { type: "text", text: `Ти професійний AI-асистент. Відповідай українською мовою. Запитання користувача: ${userText}` },
                   { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                 ]
               }
