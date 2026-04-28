@@ -24,9 +24,26 @@ export default async function handler(req, res) {
   }).catch(() => {});
 
   try {
+    // Якщо користувач написав /clear
+    if (userText.trim() === '/clear') {
+      if (KV_URL && KV_TOKEN) {
+        await fetch(`${KV_URL}/set/chat_${chatId}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify([]) 
+        });
+      }
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: "🧹 Історію розмови очищено! Починаємо з чистого аркуша." })
+      });
+      return res.status(200).send('OK');
+    }
+
     let history = [];
     
-    // 1. Отримуємо історію та виправляємо можливі помилки формату
+    // Читаємо історію
     if (KV_URL && KV_TOKEN) {
       try {
         const getReq = await fetch(`${KV_URL}/get/chat_${chatId}`, {
@@ -36,25 +53,20 @@ export default async function handler(req, res) {
         
         if (kvData.result) {
           let parsed = JSON.parse(kvData.result);
-          // Якщо історія випадково збереглася як текст (через минулий баг), розпаковуємо ще раз
-          if (typeof parsed === 'string') {
-            parsed = JSON.parse(parsed);
-          }
-          // Якщо це дійсно масив, використовуємо його
-          if (Array.isArray(parsed)) {
-            history = parsed;
-          }
+          if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+          if (Array.isArray(parsed)) history = parsed;
         }
       } catch (e) {
         console.error("Помилка читання історії:", e);
-        history = []; // Якщо база зламалася, починаємо з чистого аркуша
+        history = [];
       }
     }
 
-    if (history.length > 10) history = history.slice(-10);
+    // ЗБІЛЬШЕНА ПАМ'ЯТЬ: тепер зберігаємо останні 30 повідомлень (15 пар питань-відповідей)
+    if (history.length > 30) history = history.slice(-30);
     history.push({ role: "user", content: userText });
 
-    // 2. Відправляємо запит до GROQ (з жорстким системним промптом для української)
+    // Запит до GROQ
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -63,10 +75,11 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
+        temperature: 0.3, // Робимо її менш "творчою", щоб уникнути появи ієрогліфів
         messages: [
           { 
             role: "system", 
-            content: "Ти розумний і корисний AI-асистент. Спілкуйся ВИКЛЮЧНО чистою та грамотною українською мовою, без вкраплень англійських слів. Відповідай лаконічно." 
+            content: "Ти професійний AI-асистент. Спілкуйся виключно грамотною українською мовою. КАТЕГОРИЧНО заборонено використовувати китайські ієрогліфи або інші нетипові символи. Формуй речення чітко та логічно." 
           },
           ...history
         ]
@@ -83,14 +96,11 @@ export default async function handler(req, res) {
       
       history.push({ role: "assistant", content: replyText });
 
-      // 3. Зберігаємо історію правильним форматом (ОДИН JSON.stringify)
+      // Зберігаємо історію
       if (KV_URL && KV_TOKEN) {
         await fetch(`${KV_URL}/set/chat_${chatId}`, {
           method: 'POST',
-          headers: { 
-            Authorization: `Bearer ${KV_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(history) 
         });
       }
