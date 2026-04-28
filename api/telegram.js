@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     }
 
     let base64Image = null;
-    let targetModel = "llama-3.3-70b-versatile"; // Стандартна супер-швидка модель для тексту і PDF
+    let targetModel = "llama-3.3-70b-versatile"; 
     let fileTextContext = "";
 
     // --- ОБРОБКА ФОТО ---
@@ -66,7 +66,9 @@ export default async function handler(req, res) {
         const imgRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${fileData.result.file_path}`);
         const arrayBuffer = await imgRes.arrayBuffer();
         base64Image = Buffer.from(arrayBuffer).toString('base64');
-        targetModel = "llama-3.2-11b-vision-preview"; // Перемикаємо на нову працюючу модель для розпізнавання фото
+        
+        // НОВА ОФІЦІЙНА МОДЕЛЬ ДЛЯ ЗОРУ
+        targetModel = "llama-3.2-11b-vision-instruct"; 
       }
     }
     
@@ -77,7 +79,6 @@ export default async function handler(req, res) {
       const fileName = doc.file_name?.toLowerCase() || "";
       const fileSize = doc.file_size || 0;
 
-      // Ліміт на файли 10 МБ для Vercel
       if (fileSize < 10000000) {
         const fileRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${doc.file_id}`);
         const fileData = await fileRes.json();
@@ -87,13 +88,11 @@ export default async function handler(req, res) {
           const arrayBuffer = await docRes.arrayBuffer();
 
           if (mime === "application/pdf" || fileName.endsWith('.pdf')) {
-            // Розпаковуємо PDF
             const pdfBuffer = Buffer.from(arrayBuffer);
             const pdfData = await pdfParse(pdfBuffer);
             fileTextContext = `\n\n--- Зміст PDF-файлу "${doc.file_name}" ---\n${pdfData.text}\n-------------------`;
           } 
           else if (mime.startsWith("text/") || fileName.endsWith('.txt') || fileName.endsWith('.js') || fileName.endsWith('.html') || fileName.endsWith('.json') || fileName.endsWith('.csv')) {
-            // Читаємо як звичайний текст
             const textContent = Buffer.from(arrayBuffer).toString('utf-8');
             fileTextContext = `\n\n--- Зміст текстового файлу "${doc.file_name}" ---\n${textContent}\n-------------------`;
           } 
@@ -127,11 +126,8 @@ export default async function handler(req, res) {
         }
       } catch (e) { history = []; }
     }
-    
-    // Залишаємо останні 30 повідомлень
     if (history.length > 30) history = history.slice(-30);
 
-    // Додаємо запит у пам'ять
     history.push({ role: "user", content: userText });
 
     const currentApiMessage = base64Image 
@@ -146,7 +142,7 @@ export default async function handler(req, res) {
         model: targetModel,
         temperature: 0.3,
         messages: [
-          { role: "system", content: "Ти професійний AI-асистент. Спілкуйся виключно грамотною українською мовою. КАТЕГОРИЧНО заборонено використовувати китайські ієрогліфи або інші нетипові символи. Якщо користувач надсилає зміст файлу, проаналізуй його і дай відповідь на запитання." },
+          { role: "system", content: "Ти професійний AI-асистент. Спілкуйся виключно грамотною українською мовою. КАТЕГОРИЧНО заборонено використовувати китайські ієрогліфи або інші нетипові символи. Якщо користувач надсилає зміст файлу або фотографію, проаналізуй їх і дай відповідь на запитання." },
           ...history.slice(0, -1), 
           currentApiMessage        
         ]
