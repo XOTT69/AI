@@ -12,13 +12,11 @@ export default async function handler(req, res) {
   const userText = message.text;
   
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  const GROQ_KEY = process.env.GROQ_API_KEY; // Тепер використовуємо ключ Groq
+  const GROQ_KEY = process.env.GROQ_API_KEY;
   
-  // Змінні для історії розмови
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-  // Відправляємо статус "друкує..."
   fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -28,24 +26,35 @@ export default async function handler(req, res) {
   try {
     let history = [];
     
-    // 1. Читаємо попередню історію з бази даних
+    // 1. Отримуємо історію та виправляємо можливі помилки формату
     if (KV_URL && KV_TOKEN) {
-      const getReq = await fetch(`${KV_URL}/get/chat_${chatId}`, {
-        headers: { Authorization: `Bearer ${KV_TOKEN}` }
-      });
-      const kvData = await getReq.json();
-      if (kvData.result) {
-        history = JSON.parse(kvData.result);
+      try {
+        const getReq = await fetch(`${KV_URL}/get/chat_${chatId}`, {
+          headers: { Authorization: `Bearer ${KV_TOKEN}` }
+        });
+        const kvData = await getReq.json();
+        
+        if (kvData.result) {
+          let parsed = JSON.parse(kvData.result);
+          // Якщо історія випадково збереглася як текст (через минулий баг), розпаковуємо ще раз
+          if (typeof parsed === 'string') {
+            parsed = JSON.parse(parsed);
+          }
+          // Якщо це дійсно масив, використовуємо його
+          if (Array.isArray(parsed)) {
+            history = parsed;
+          }
+        }
+      } catch (e) {
+        console.error("Помилка читання історії:", e);
+        history = []; // Якщо база зламалася, починаємо з чистого аркуша
       }
     }
 
-    // Залишаємо останні 10 повідомлень
     if (history.length > 10) history = history.slice(-10);
-    
-    // Додаємо нове повідомлення користувача
     history.push({ role: "user", content: userText });
 
-    // 2. Відправляємо запит до GROQ
+    // 2. Відправляємо запит до GROQ (з жорстким системним промптом для української)
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -53,9 +62,12 @@ export default async function handler(req, res) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // Одна з найпотужніших моделей Groq
+        model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: "Ти розумний і корисний AI-асистент. Відповідай українською мовою лаконічно та по суті." },
+          { 
+            role: "system", 
+            content: "Ти розумний і корисний AI-асистент. Спілкуйся ВИКЛЮЧНО чистою та грамотною українською мовою, без вкраплень англійських слів. Відповідай лаконічно." 
+          },
           ...history
         ]
       })
@@ -69,10 +81,9 @@ export default async function handler(req, res) {
     } else if (aiData.choices && aiData.choices.length > 0) {
       replyText = aiData.choices[0].message.content;
       
-      // Додаємо відповідь ШІ в історію
       history.push({ role: "assistant", content: replyText });
 
-      // 3. Зберігаємо історію назад у базу даних
+      // 3. Зберігаємо історію правильним форматом (ОДИН JSON.stringify)
       if (KV_URL && KV_TOKEN) {
         await fetch(`${KV_URL}/set/chat_${chatId}`, {
           method: 'POST',
@@ -80,14 +91,13 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${KV_TOKEN}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(JSON.stringify(history)) // Подвійна стрінгіфікація для Upstash
+          body: JSON.stringify(history) 
         });
       }
     } else {
       replyText = `❓ Невідома відповідь:\n${JSON.stringify(aiData).substring(0, 200)}`;
     }
 
-    // Відправляємо відповідь користувачу в Telegram
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
