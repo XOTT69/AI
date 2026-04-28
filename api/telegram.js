@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     let replyText = "";
 
     // ==========================================
-    // ЛОГІКА ДЛЯ ФОТО (OPENROUTER: GEMMA 3 27B)
+    // ЛОГІКА ДЛЯ ФОТО (НАЙШВИДША МОДЕЛЬ ДЛЯ VERCEL 10s TIMEOUT)
     // ==========================================
     if (message.photo && message.photo.length > 0) {
       const fileId = message.photo[message.photo.length - 1].file_id;
@@ -85,7 +85,7 @@ export default async function handler(req, res) {
         const arrayBuffer = await imgRes.arrayBuffer();
         const base64Image = Buffer.from(arrayBuffer).toString('base64');
         
-        // Відправляємо запит до OpenRouter (Google Gemma 3 - ідеальна українська)
+        // Відправляємо фото у найшвидший безкоштовний роутер
         const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: { 
@@ -95,13 +95,12 @@ export default async function handler(req, res) {
             "X-Title": "TG Bot"
           },
           body: JSON.stringify({
-            model: "google/gemma-3-27b-it",
-            route: "fallback",
+            model: "openrouter/free", // ЦЕ ВРЯТУЄ ВІД ТАЙМАУТУ VERCEL
             messages: [
               {
                 role: "user",
                 content: [
-                  { type: "text", text: `Ти професійний AI-асистент. Відповідай виключно грамотною українською мовою. Детально опиши, що зображено на фото, або дай відповідь на запитання: ${userText}` },
+                  { type: "text", text: `Ти професійний AI-асистент. Відповідай виключно українською мовою: ${userText}` },
                   { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
                 ]
               }
