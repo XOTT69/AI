@@ -24,7 +24,30 @@ export default async function handler(req, res) {
   }).catch(() => {});
 
   try {
-    // Якщо користувач написав /clear
+    // ------------------------------------
+    // ОБРОБКА КОМАНД (Start, Help, Clear)
+    // ------------------------------------
+    
+    // Команди /start або /help
+    if (userText.trim() === '/start' || userText.trim() === '/help') {
+      const helpText = `👋 **Привіт! Я твій особистий AI-помічник.**\n\n` +
+                       `🧠 Я працюю на базі потужної моделі Llama 3.3 (70B) і розумію українську.\n\n` +
+                       `**Що я вмію:**\n` +
+                       `• Відповідати на будь-які питання\n` +
+                       `• Писати тексти, код, ідеї\n` +
+                       `• Пам'ятати контекст розмови (останні 30 повідомлень)\n\n` +
+                       `**Корисні команди:**\n` +
+                       `🧹 /clear — Очистити пам'ять. Використовуй це, коли хочеш змінити тему і почати розмову з чистого аркуша.`;
+                       
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: helpText, parse_mode: 'Markdown' })
+      });
+      return res.status(200).send('OK');
+    }
+
+    // Команда /clear
     if (userText.trim() === '/clear') {
       if (KV_URL && KV_TOKEN) {
         await fetch(`${KV_URL}/set/chat_${chatId}`, {
@@ -36,14 +59,17 @@ export default async function handler(req, res) {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: "🧹 Історію розмови очищено! Починаємо з чистого аркуша." })
+        body: JSON.stringify({ chat_id: chatId, text: "🧹 **Історію розмови успішно очищено!** Починаємо з чистого аркуша.", parse_mode: 'Markdown' })
       });
       return res.status(200).send('OK');
     }
 
+    // ------------------------------------
+    // ОСНОВНА ЛОГІКА AI (Читання історії та запит)
+    // ------------------------------------
+
     let history = [];
     
-    // Читаємо історію
     if (KV_URL && KV_TOKEN) {
       try {
         const getReq = await fetch(`${KV_URL}/get/chat_${chatId}`, {
@@ -62,11 +88,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // ЗБІЛЬШЕНА ПАМ'ЯТЬ: тепер зберігаємо останні 30 повідомлень (15 пар питань-відповідей)
     if (history.length > 30) history = history.slice(-30);
     history.push({ role: "user", content: userText });
 
-    // Запит до GROQ
     const aiResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -75,7 +99,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
-        temperature: 0.3, // Робимо її менш "творчою", щоб уникнути появи ієрогліфів
+        temperature: 0.3,
         messages: [
           { 
             role: "system", 
@@ -96,7 +120,6 @@ export default async function handler(req, res) {
       
       history.push({ role: "assistant", content: replyText });
 
-      // Зберігаємо історію
       if (KV_URL && KV_TOKEN) {
         await fetch(`${KV_URL}/set/chat_${chatId}`, {
           method: 'POST',
@@ -111,7 +134,7 @@ export default async function handler(req, res) {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: replyText })
+      body: JSON.stringify({ chat_id: chatId, text: replyText, parse_mode: 'Markdown' }) // Markdown для красивого форматування жирного тексту і списків
     });
 
   } catch (error) {
