@@ -1,3 +1,5 @@
+import pdfParse from 'pdf-parse';
+
 export const config = {
   runtime: "nodejs"
 };
@@ -9,9 +11,6 @@ export default async function handler(req, res) {
   if (!message) return res.status(200).send('OK');
 
   const chatId = message.chat.id;
-  
-  // Витягуємо текст або підпис до фото/документа
-  const userText = message.text || message.caption || "Що ти бачиш на цьому фото?";
   
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const GROQ_KEY = process.env.GROQ_API_KEY;
@@ -25,19 +24,19 @@ export default async function handler(req, res) {
   }).catch(() => {});
 
   try {
+    let userText = message.text || message.caption || "Поясни цей файл або зображення.";
+    
     // --- ОБРОБКА КОМАНД ---
     if (userText.trim() === '/start' || userText.trim() === '/help') {
       const helpText = `👋 **Привіт! Я твій універсальний AI-помічник.**\n\n` +
-                       `Я працюю на базі потужних моделей Llama 3.\n\n` +
                        `**Що я вмію:**\n` +
-                       `• Відповідати на питання і писати тексти 📝\n` +
-                       `• **Розпізнавати фотографії!** (Просто надішли мені фото і запитай щось) 🖼️\n` +
-                       `• Пам'ятати контекст нашої розмови 🧠\n\n` +
-                       `**Команди:**\n` +
-                       `🧹 /clear — Очистити пам'ять і почати нову розмову.`;
+                       `• Писати тексти і спілкуватися 📝\n` +
+                       `• Розпізнавати **фотографії** 🖼️\n` +
+                       `• Читати **PDF-документи** та текстові файли (.txt, код) 📄\n` +
+                       `• Пам'ятати контекст розмови 🧠\n\n` +
+                       `🧹 /clear — Очистити пам'ять і почати з чистого аркуша.`;
       await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: helpText, parse_mode: 'Markdown' })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: helpText, parse_mode: 'Markdown' })
       });
       return res.status(200).send('OK');
     }
@@ -54,26 +53,64 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
-    // --- РОБОТА З ФОТО (VISION) ---
     let base64Image = null;
-    let targetModel = "llama-3.3-70b-versatile"; // Стандартна текстова модель
+    let targetModel = "llama-3.3-70b-versatile"; // Стандартна супер-швидка модель для тексту і PDF
+    let fileTextContext = "";
 
+    // --- ОБРОБКА ФОТО ---
     if (message.photo && message.photo.length > 0) {
-      // Беремо фото найкращої якості (останнє в масиві Telegram)
       const fileId = message.photo[message.photo.length - 1].file_id;
-      
-      // Отримуємо шлях до файлу
       const fileRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
       const fileData = await fileRes.json();
-      
       if (fileData.ok) {
-        // Завантажуємо саме фото
         const imgRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${fileData.result.file_path}`);
         const arrayBuffer = await imgRes.arrayBuffer();
-        
-        // Перетворюємо у Base64 (формат, який розуміє ШІ)
         base64Image = Buffer.from(arrayBuffer).toString('base64');
-        targetModel = "llama-3.2-90b-vision-preview"; // Перемикаємось на модель із "зором"
+        targetModel = "llama-3.2-11b-vision-preview"; // Перемикаємо на нову працюючу модель для розпізнавання фото
+      }
+    }
+    
+    // --- ОБРОБКА ДОКУМЕНТІВ (PDF / TXT) ---
+    else if (message.document) {
+      const doc = message.document;
+      const mime = doc.mime_type || "";
+      const fileName = doc.file_name?.toLowerCase() || "";
+      const fileSize = doc.file_size || 0;
+
+      // Ліміт на файли 10 МБ для Vercel
+      if (fileSize < 10000000) {
+        const fileRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${doc.file_id}`);
+        const fileData = await fileRes.json();
+        
+        if (fileData.ok) {
+          const docRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${fileData.result.file_path}`);
+          const arrayBuffer = await docRes.arrayBuffer();
+
+          if (mime === "application/pdf" || fileName.endsWith('.pdf')) {
+            // Розпаковуємо PDF
+            const pdfBuffer = Buffer.from(arrayBuffer);
+            const pdfData = await pdfParse(pdfBuffer);
+            fileTextContext = `\n\n--- Зміст PDF-файлу "${doc.file_name}" ---\n${pdfData.text}\n-------------------`;
+          } 
+          else if (mime.startsWith("text/") || fileName.endsWith('.txt') || fileName.endsWith('.js') || fileName.endsWith('.html') || fileName.endsWith('.json') || fileName.endsWith('.csv')) {
+            // Читаємо як звичайний текст
+            const textContent = Buffer.from(arrayBuffer).toString('utf-8');
+            fileTextContext = `\n\n--- Зміст текстового файлу "${doc.file_name}" ---\n${textContent}\n-------------------`;
+          } 
+          else {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: "⚠️ Наразі я розумію тільки PDF, текстові файли (.txt, .js тощо) та картинки." })
+            });
+            return res.status(200).send('OK');
+          }
+          
+          userText += fileTextContext;
+        }
+      } else {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: "⚠️ Цей файл завеликий. Будь ласка, надішліть файл до 10 МБ." })
+        });
+        return res.status(200).send('OK');
       }
     }
 
@@ -90,12 +127,13 @@ export default async function handler(req, res) {
         }
       } catch (e) { history = []; }
     }
+    
+    // Залишаємо останні 30 повідомлень
     if (history.length > 30) history = history.slice(-30);
 
-    // Зберігаємо текстовий варіант запиту в пам'ять бази даних (щоб фото не забивало базу)
+    // Додаємо запит у пам'ять
     history.push({ role: "user", content: userText });
 
-    // Формуємо фінальний запит для API (якщо є фото - додаємо його масив, якщо ні - просто текст)
     const currentApiMessage = base64Image 
       ? { role: "user", content: [{ type: "text", text: userText }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }] }
       : { role: "user", content: userText };
@@ -108,9 +146,9 @@ export default async function handler(req, res) {
         model: targetModel,
         temperature: 0.3,
         messages: [
-          { role: "system", content: "Ти професійний AI-асистент. Спілкуйся виключно грамотною українською мовою. КАТЕГОРИЧНО заборонено використовувати китайські ієрогліфи або інші нетипові символи. Формуй речення чітко." },
-          ...history.slice(0, -1), // Всі попередні повідомлення (тільки текст)
-          currentApiMessage        // Поточне повідомлення (може містити картинку)
+          { role: "system", content: "Ти професійний AI-асистент. Спілкуйся виключно грамотною українською мовою. КАТЕГОРИЧНО заборонено використовувати китайські ієрогліфи або інші нетипові символи. Якщо користувач надсилає зміст файлу, проаналізуй його і дай відповідь на запитання." },
+          ...history.slice(0, -1), 
+          currentApiMessage        
         ]
       })
     });
