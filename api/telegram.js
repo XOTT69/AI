@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   
   const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const GROQ_KEY = process.env.GROQ_API_KEY;
-  const GEMINI_KEY = process.env.GEMINI_API_KEY; // Ключ для розпізнавання фото
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY; // Використовуємо OpenRouter для стабільного зору
   
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       const helpText = `👋 **Привіт! Я твій універсальний AI-помічник.**\n\n` +
                        `**Що я вмію:**\n` +
                        `• Писати тексти і спілкуватися 📝 (через Llama 3.3)\n` +
-                       `• Розпізнавати **фотографії** 🖼️ (через Gemini)\n` +
+                       `• Розпізнавати **фотографії** 🖼️ (через Qwen Vision)\n` +
                        `• Читати **PDF-документи** та текстові файли (.txt, код) 📄\n` +
                        `• Пам'ятати контекст розмови 🧠\n\n` +
                        `🧹 /clear — Очистити пам'ять і почати з чистого аркуша.`;
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
-    // --- ЧИТАННЯ ІСТОРІЇ (Спільна для тексту і фото) ---
+    // --- ЧИТАННЯ ІСТОРІЇ ---
     let history = [];
     if (KV_URL && KV_TOKEN) {
       try {
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     let replyText = "";
 
     // ==========================================
-    // ЛОГІКА ДЛЯ ФОТО (GEMINI API)
+    // ЛОГІКА ДЛЯ ФОТО (OPENROUTER QWEN VISION)
     // ==========================================
     if (message.photo && message.photo.length > 0) {
       const fileId = message.photo[message.photo.length - 1].file_id;
@@ -85,27 +85,35 @@ export default async function handler(req, res) {
         const arrayBuffer = await imgRes.arrayBuffer();
         const base64Image = Buffer.from(arrayBuffer).toString('base64');
         
-        // Відправляємо запит до Gemini
-        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+        // Відправляємо запит до OpenRouter (Qwen Vision 72B - стабільна і безкоштовна)
+        const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Authorization": `Bearer ${OPENROUTER_KEY}`, 
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://telegram-bot",
+            "X-Title": "TG Bot"
+          },
           body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: `Ти професійний AI-асистент. Відповідай українською. Запитання: ${userText}` },
-                { inline_data: { mime_type: "image/jpeg", data: base64Image } }
-              ]
-            }]
+            model: "qwen/qwen-2.5-vl-72b-instruct:free",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: `Ти професійний AI-асистент. Відповідай українською. Запитання: ${userText}` },
+                  { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                ]
+              }
+            ]
           })
         });
 
-        const geminiData = await geminiResponse.json();
+        const orData = await orResponse.json();
         
-        if (geminiData.error) {
-          replyText = `⚠️ Помилка Gemini: ${geminiData.error.message}`;
-        } else if (geminiData.candidates && geminiData.candidates.length > 0) {
-          replyText = geminiData.candidates[0].content.parts[0].text;
-          // Зберігаємо в історію тільки текстовий опис
+        if (orData.error) {
+          replyText = `⚠️ Помилка OpenRouter: ${orData.error.message}`;
+        } else if (orData.choices && orData.choices.length > 0) {
+          replyText = orData.choices[0].message.content;
           history.push({ role: "user", content: `[Надіслано фото]: ${userText}` });
         } else {
           replyText = "❓ Не вдалося розпізнати фото.";
@@ -113,12 +121,11 @@ export default async function handler(req, res) {
       }
     } 
     // ==========================================
-    // ЛОГІКА ДЛЯ ТЕКСТУ ТА PDF (GROQ API)
+    // ЛОГІКА ДЛЯ ТЕКСТУ ТА PDF (GROQ LLAMA 3.3)
     // ==========================================
     else {
       let fileTextContext = "";
 
-      // Читання PDF або TXT
       if (message.document) {
         const doc = message.document;
         const mime = doc.mime_type || "";
@@ -148,7 +155,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Якщо це був текст або успішно прочитаний документ, йдемо в Groq
       if (!replyText) {
         history.push({ role: "user", content: userText });
 
