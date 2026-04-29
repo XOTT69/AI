@@ -7,9 +7,6 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
-  "dependencies": {
-    "pdf-parse": "^1.1.1"
-  },
   "devDependencies": {
     "wrangler": "^4.13.2"
   }
