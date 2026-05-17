@@ -59,18 +59,18 @@ const MODEL_REGISTRY = {
   }
 };
 
+function jsonHeaders() {
+  return {
+    "Content-Type": "application/json; charset=utf-8"
+  };
+}
+
 function sseHeaders() {
   return {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "X-Accel-Buffering": "no"
-  };
-}
-
-function jsonHeaders() {
-  return {
-    "Content-Type": "application/json; charset=utf-8"
   };
 }
 
@@ -345,7 +345,10 @@ async function handleOpenAICompatible(fetcher, messages, body) {
         error: "Provider error",
         details: err
       }),
-      { status: res.status, headers: jsonHeaders() }
+      {
+        status: res.status,
+        headers: jsonHeaders()
+      }
     );
   }
 
@@ -365,7 +368,10 @@ async function handleGemini(messages, body) {
         error: "Gemini error",
         details: err
       }),
-      { status: res.status, headers: jsonHeaders() }
+      {
+        status: res.status,
+        headers: jsonHeaders()
+      }
     );
   }
 
