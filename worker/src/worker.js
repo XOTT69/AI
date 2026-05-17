@@ -1,120 +1,111 @@
-function corsHeaders() {
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      const url = new URL(request.url);
+      const method = request.method;
+
+      if (method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: corsHeaders() });
+      }
+
+      const userId = getUserId(request);
+      if (!userId) {
+        return json({ error: "Missing X-User-Id header" }, 401);
+      }
+
+      if (url.pathname === "/api/chats" && method === "GET") {
+        return handleListChats(env, userId);
+      }
+
+      if (url.pathname === "/api/chats" && method === "POST") {
+        return handleCreateChat(request, env, userId);
+      }
+
+      if (url.pathname.match(/^\/api\/chats\/\d+$/) && method === "GET") {
+        const chatId = url.pathname.split("/").pop();
+        return handleGetChat(env, userId, chatId);
+      }
+
+      if (url.pathname.match(/^\/api\/chats\/\d+$/) && method === "DELETE") {
+        const chatId = url.pathname.split("/").pop();
+        return handleDeleteChat(env, userId, chatId);
+      }
+
+      if (url.pathname.match(/^\/api\/chats\/\d+\/messages$/) && method === "POST") {
+        const chatId = url.pathname.split("/")[3];
+        return handleCreateMessage(request, env, userId, chatId);
+      }
+
+      if (url.pathname === "/api/attachments/upload" && method === "POST") {
+        return handleUploadAttachment(request, env, userId);
+      }
+
+      if (url.pathname.startsWith("/api/files/") && method === "GET") {
+        const key = decodeURIComponent(url.pathname.replace("/api/files/", ""));
+        return handleServeFile(env, key);
+      }
+
+      return json({ error: "Not found" }, 404);
+    } catch (error) {
+      console.error("Worker error:", error);
+      return json({ error: error.message || "Server error" }, 500);
+    }
+  }
+};
+
+function corsHeaders(extra = {}) {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id",
-    "Access-Control-Max-Age": "86400"
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id",
+    ...extra
   };
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
+    headers: corsHeaders({
       "Content-Type": "application/json; charset=utf-8",
-      ...corsHeaders()
-    }
+      ...extraHeaders
+    })
   });
 }
 
-function text(body, status = 200) {
-  return new Response(body, {
-    status,
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      ...corsHeaders()
-    }
-  });
+function getUserId(request) {
+  const raw = request.headers.get("X-User-Id");
+  return raw ? String(raw).trim() : "";
 }
 
-function toMillis(value) {
-  return value ? new Date(value).getTime() : Date.now();
-}
-
-async function getOrCreateUser(db, externalUserId) {
-  if (!externalUserId) {
-    throw new Error("Missing external user id");
-  }
-
-  let user = await db
-    .prepare(`
-      SELECT id, telegram_id, email, name, avatar_url, google_sub, created_at
-      FROM users
-      WHERE google_sub = ?
-      LIMIT 1
-    `)
-    .bind(externalUserId)
-    .first();
-
-  if (user) return user;
-
-  await db
-    .prepare(`
-      INSERT INTO users (telegram_id, email, name, avatar_url, google_sub, created_at)
-      VALUES (NULL, NULL, NULL, NULL, ?, CURRENT_TIMESTAMP)
-    `)
-    .bind(externalUserId)
-    .run();
-
-  user = await db
-    .prepare(`
-      SELECT id, telegram_id, email, name, avatar_url, google_sub, created_at
-      FROM users
-      WHERE google_sub = ?
-      LIMIT 1
-    `)
-    .bind(externalUserId)
-    .first();
-
-  if (!user) {
-    throw new Error("Failed to create user");
-  }
-
-  return user;
-}
-
-async function getChatById(db, userId, chatId) {
-  return db
-    .prepare(`
-      SELECT id, user_id, title, model, system_prompt, created_at, updated_at
-      FROM chats
-      WHERE id = ? AND user_id = ?
-      LIMIT 1
-    `)
+async function chatBelongsToUser(env, chatId, userId) {
+  const row = await env.DB
+    .prepare(`SELECT id FROM chats WHERE id = ? AND user_id = ? LIMIT 1`)
     .bind(chatId, userId)
     .first();
+
+  return !!row;
 }
 
-async function getChatMessages(db, chatId) {
-  const result = await db
-    .prepare(`
-      SELECT id, role, content, provider, model, prompt_tokens, completion_tokens, created_at
-      FROM messages
-      WHERE chat_id = ?
-      ORDER BY id ASC
-    `)
-    .bind(chatId)
-    .all();
-
-  return (result.results || []).map((row) => ({
-    id: String(row.id),
-    role: row.role,
-    content: row.content || "",
-    createdAt: toMillis(row.created_at),
-    provider: row.provider || null,
-    model: row.model || null,
-    promptTokens: row.prompt_tokens || 0,
-    completionTokens: row.completion_tokens || 0
-  }));
+function normalizeTimestamp(row) {
+  return row ? new Date(row).toISOString() : new Date().toISOString();
 }
 
-async function getChatsWithPreview(db, userId) {
-  const result = await db
+function fileUrlFor(env, key) {
+  if (env.R2_PUBLIC_URL) {
+    return `${String(env.R2_PUBLIC_URL).replace(/\/$/, "")}/${key}`;
+  }
+  if (env.WORKER_PUBLIC_URL) {
+    return `${String(env.WORKER_PUBLIC_URL).replace(/\/$/, "")}/api/files/${encodeURIComponent(key)}`;
+  }
+  return `/api/files/${encodeURIComponent(key)}`;
+}
+
+async function handleListChats(env, userId) {
+  const { results } = await env.DB
     .prepare(`
       SELECT
         c.id,
         c.title,
-        c.model,
         c.created_at,
         c.updated_at,
         (
@@ -131,319 +122,301 @@ async function getChatsWithPreview(db, userId) {
     .bind(userId)
     .all();
 
-  return (result.results || []).map((row) => ({
-    id: String(row.id),
-    title: row.title || "Новий чат",
-    model: row.model || null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    preview: row.preview || ""
-  }));
+  return json({ chats: results || [] });
 }
 
-async function createChat(db, userId, title = "Новий чат", model = null, systemPrompt = null) {
-  await db
+async function handleCreateChat(request, env, userId) {
+  const body = await request.json().catch(() => ({}));
+  const title = String(body?.title || "Новий чат").slice(0, 120);
+  const model = String(body?.model || "auto").slice(0, 120);
+  const now = new Date().toISOString();
+
+  const result = await env.DB
     .prepare(`
-      INSERT INTO chats (user_id, title, model, system_prompt, created_at, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO chats (user_id, title, model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
     `)
-    .bind(userId, title, model, systemPrompt)
+    .bind(userId, title, model, now, now)
     .run();
 
-  const created = await db
+  return json({
+    chat: {
+      id: result.meta.last_row_id,
+      title,
+      model,
+      created_at: now,
+      updated_at: now
+    }
+  }, 201);
+}
+
+async function handleGetChat(env, userId, chatId) {
+  const chat = await env.DB
     .prepare(`
-      SELECT id, user_id, title, model, system_prompt, created_at, updated_at
+      SELECT id, title, model, created_at, updated_at
       FROM chats
-      WHERE user_id = ?
-      ORDER BY id DESC
+      WHERE id = ? AND user_id = ?
       LIMIT 1
     `)
-    .bind(userId)
+    .bind(chatId, userId)
     .first();
 
-  return created;
-}
+  if (!chat) {
+    return json({ error: "Chat not found" }, 404);
+  }
 
-async function appendMessage(db, { chatId, role, content = "", provider = null, model = null, promptTokens = 0, completionTokens = 0 }) {
-  await db
+  const { results: messageRows } = await env.DB
     .prepare(`
-      INSERT INTO messages (chat_id, role, content, provider, model, prompt_tokens, completion_tokens, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `)
-    .bind(chatId, role, content, provider, model, promptTokens, completionTokens)
-    .run();
-
-  await db
-    .prepare(`
-      UPDATE chats
-      SET updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `)
-    .bind(chatId)
-    .run();
-
-  const inserted = await db
-    .prepare(`
-      SELECT id, role, content, provider, model, prompt_tokens, completion_tokens, created_at
+      SELECT
+        id,
+        role,
+        content,
+        model,
+        created_at
       FROM messages
       WHERE chat_id = ?
-      ORDER BY id DESC
-      LIMIT 1
+      ORDER BY id ASC
     `)
     .bind(chatId)
-    .first();
+    .all();
 
-  return {
-    id: String(inserted.id),
-    chatId: String(chatId),
-    role: inserted.role,
-    content: inserted.content || "",
-    createdAt: toMillis(inserted.created_at),
-    provider: inserted.provider || null,
-    model: inserted.model || null,
-    promptTokens: inserted.prompt_tokens || 0,
-    completionTokens: inserted.completion_tokens || 0
-  };
+  const { results: attachmentRows } = await env.DB
+    .prepare(`
+      SELECT
+        ma.message_id,
+        a.id,
+        a.kind,
+        a.r2_key,
+        a.file_name,
+        a.mime_type,
+        a.file_size,
+        a.created_at
+      FROM message_attachments ma
+      JOIN attachments a ON a.id = ma.attachment_id
+      WHERE a.chat_id = ?
+      ORDER BY a.id ASC
+    `)
+    .bind(chatId)
+    .all();
+
+  const attachMap = new Map();
+  for (const row of attachmentRows || []) {
+    const list = attachMap.get(String(row.message_id)) || [];
+    list.push({
+      id: row.id,
+      kind: row.kind,
+      file_name: row.file_name,
+      mime_type: row.mime_type,
+      file_size: row.file_size,
+      created_at: row.created_at,
+      url: fileUrlFor(env, row.r2_key)
+    });
+    attachMap.set(String(row.message_id), list);
+  }
+
+  const messages = (messageRows || []).map((row) => ({
+    id: String(row.id),
+    role: row.role,
+    content: row.content || "",
+    model: row.model || "",
+    createdAt: row.created_at,
+    attachments: attachMap.get(String(row.id)) || []
+  }));
+
+  return json({
+    chat: {
+      id: String(chat.id),
+      title: chat.title,
+      model: chat.model || "auto",
+      createdAt: chat.created_at,
+      updatedAt: chat.updated_at,
+      messages
+    }
+  });
 }
 
-async function updateAssistantMessage(db, { userId, chatId, messageId, content, provider = null, model = null }) {
-  const chat = await getChatById(db, userId, Number(chatId));
-  if (!chat) throw new Error("Chat not found");
+async function handleDeleteChat(env, userId, chatId) {
+  const exists = await chatBelongsToUser(env, chatId, userId);
+  if (!exists) return json({ error: "Chat not found" }, 404);
 
-  const existing = await db
+  const { results: attached } = await env.DB
     .prepare(`
-      SELECT id
-      FROM messages
-      WHERE id = ? AND chat_id = ? AND role = 'assistant'
-      LIMIT 1
+      SELECT a.r2_key
+      FROM attachments a
+      WHERE a.chat_id = ?
     `)
-    .bind(Number(messageId), Number(chatId))
-    .first();
+    .bind(chatId)
+    .all();
 
-  if (existing) {
-    await db
+  const keys = (attached || []).map((r) => r.r2_key).filter(Boolean);
+  if (keys.length) {
+    await env.FILES.delete(keys);
+  }
+
+  await env.DB.prepare(`DELETE FROM message_attachments WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)`)
+    .bind(chatId)
+    .run();
+
+  await env.DB.prepare(`DELETE FROM attachments WHERE chat_id = ?`).bind(chatId).run();
+  await env.DB.prepare(`DELETE FROM messages WHERE chat_id = ?`).bind(chatId).run();
+  await env.DB.prepare(`DELETE FROM chats WHERE id = ? AND user_id = ?`).bind(chatId, userId).run();
+
+  return json({ ok: true });
+}
+
+async function handleCreateMessage(request, env, userId, chatId) {
+  const exists = await chatBelongsToUser(env, chatId, userId);
+  if (!exists) return json({ error: "Chat not found" }, 404);
+
+  const body = await request.json().catch(() => ({}));
+  const role = String(body?.role || "user");
+  const content = String(body?.content || "");
+  const model = String(body?.model || "auto").slice(0, 120);
+  const attachments = Array.isArray(body?.attachments) ? body.attachments : [];
+  const now = new Date().toISOString();
+
+  const insertResult = await env.DB
+    .prepare(`
+      INSERT INTO messages (chat_id, role, content, model, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    .bind(chatId, role, content, model, now)
+    .run();
+
+  const messageId = insertResult.meta.last_row_id;
+
+  for (const attachmentId of attachments) {
+    await env.DB
       .prepare(`
-        UPDATE messages
-        SET content = ?, provider = COALESCE(?, provider), model = COALESCE(?, model)
-        WHERE id = ? AND chat_id = ? AND role = 'assistant'
+        INSERT INTO message_attachments (message_id, attachment_id)
+        VALUES (?, ?)
       `)
-      .bind(content, provider, model, Number(messageId), Number(chatId))
+      .bind(messageId, attachmentId)
       .run();
+  }
 
-    await db
+  const titleSeed = content.trim().slice(0, 80);
+  if (role === "user" && titleSeed) {
+    await env.DB
       .prepare(`
         UPDATE chats
-        SET updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+        SET title = CASE WHEN title IS NULL OR title = '' OR title = 'Новий чат' THEN ? ELSE title END,
+            updated_at = ?
+        WHERE id = ? AND user_id = ?
       `)
-      .bind(Number(chatId))
+      .bind(titleSeed, now, chatId, userId)
       .run();
-
-    return { ok: true, messageId: String(messageId) };
+  } else {
+    await env.DB
+      .prepare(`
+        UPDATE chats
+        SET updated_at = ?
+        WHERE id = ? AND user_id = ?
+      `)
+      .bind(now, chatId, userId)
+      .run();
   }
 
-  const inserted = await appendMessage(db, {
-    chatId: Number(chatId),
-    role: "assistant",
-    content,
-    provider,
-    model
-  });
-
-  return { ok: true, messageId: String(inserted.id) };
+  return json({
+    message: {
+      id: messageId,
+      role,
+      content,
+      model,
+      created_at: now
+    }
+  }, 201);
 }
 
-export default {
-  async fetch(request, env) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders() });
-    }
+async function handleUploadAttachment(request, env, userId) {
+  const form = await request.formData();
+  const chatId = String(form.get("chat_id") || "");
+  const file = form.get("file");
 
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    const db = env.DB;
+  if (!chatId) return json({ error: "chat_id required" }, 400);
+  if (!(file instanceof File)) return json({ error: "file required" }, 400);
 
-    if (!db) {
-      return json({ error: "D1 binding DB is missing" }, 500);
-    }
+  const exists = await chatBelongsToUser(env, chatId, userId);
+  if (!exists) return json({ error: "Chat not found" }, 404);
 
-    if (request.method === "GET" && path === "/") {
-      return text("ai1 history api ok");
-    }
-
-    if (request.method === "GET" && path === "/api/health") {
-      return json({ ok: true, worker: "ai1", db: "connected" });
-    }
-
-    const externalUserId = request.headers.get("X-User-Id");
-
-    if (!externalUserId) {
-      return json({ error: "Missing X-User-Id" }, 401);
-    }
-
-    try {
-      const user = await getOrCreateUser(db, externalUserId);
-      const internalUserId = Number(user.id);
-
-      if (request.method === "GET" && path === "/api/chats") {
-        const chats = await getChatsWithPreview(db, internalUserId);
-        return json({ chats });
-      }
-
-      if (request.method === "POST" && path === "/api/chats") {
-        const body = await request.json().catch(() => ({}));
-        const title = String(body.title || "Новий чат").trim() || "Новий чат";
-        const model = body.model ? String(body.model) : null;
-        const systemPrompt = body.systemPrompt ? String(body.systemPrompt) : null;
-
-        const chat = await createChat(db, internalUserId, title, model, systemPrompt);
-
-        return json({
-          chat: {
-            id: String(chat.id),
-            title: chat.title || "Новий чат",
-            model: chat.model || null,
-            created_at: chat.created_at,
-            updated_at: chat.updated_at
-          }
-        });
-      }
-
-      if (request.method === "GET" && path.startsWith("/api/chats/")) {
-        const parts = path.split("/").filter(Boolean);
-
-        if (parts.length === 3 && parts[0] === "api" && parts[1] === "chats") {
-          const chatId = Number(parts[2]);
-          const chat = await getChatById(db, internalUserId, chatId);
-
-          if (!chat) {
-            return json({ error: "Chat not found" }, 404);
-          }
-
-          const messages = await getChatMessages(db, chatId);
-
-          return json({
-            chat: {
-              id: String(chat.id),
-              title: chat.title || "Новий чат",
-              model: chat.model || null,
-              systemPrompt: chat.system_prompt || null,
-              createdAt: toMillis(chat.created_at),
-              updatedAt: toMillis(chat.updated_at),
-              messages
-            }
-          });
-        }
-      }
-
-      if (request.method === "DELETE" && path.startsWith("/api/chats/")) {
-        const parts = path.split("/").filter(Boolean);
-
-        if (parts.length === 3 && parts[0] === "api" && parts[1] === "chats") {
-          const chatId = Number(parts[2]);
-          const chat = await getChatById(db, internalUserId, chatId);
-
-          if (!chat) {
-            return json({ error: "Chat not found" }, 404);
-          }
-
-          await db.batch([
-            db.prepare(`DELETE FROM messages WHERE chat_id = ?`).bind(chatId),
-            db.prepare(`DELETE FROM chats WHERE id = ? AND user_id = ?`).bind(chatId, internalUserId)
-          ]);
-
-          return json({ ok: true });
-        }
-      }
-
-      if (request.method === "POST" && path === "/api/messages") {
-        const body = await request.json().catch(() => ({}));
-        const chatId = Number(body.chatId);
-        const content = String(body.content || "").trim();
-
-        if (!chatId) {
-          return json({ error: "chatId is required" }, 400);
-        }
-
-        const chat = await getChatById(db, internalUserId, chatId);
-        if (!chat) {
-          return json({ error: "Chat not found" }, 404);
-        }
-
-        if (!content) {
-          return json({ error: "Message content is required" }, 400);
-        }
-
-        if (!chat.title || chat.title === "Новий чат" || chat.title === "New chat") {
-          await db
-            .prepare(`
-              UPDATE chats
-              SET title = ?, updated_at = CURRENT_TIMESTAMP
-              WHERE id = ? AND user_id = ?
-            `)
-            .bind(content.slice(0, 48), chatId, internalUserId)
-            .run();
-        }
-
-        const userMessage = await appendMessage(db, {
-          chatId,
-          role: "user",
-          content
-        });
-
-        const updatedChat = await getChatById(db, internalUserId, chatId);
-
-        return json({
-          chat: {
-            id: String(updatedChat.id),
-            title: updatedChat.title || "Новий чат"
-          },
-          message: userMessage
-        });
-      }
-
-      if (request.method === "POST" && path === "/api/messages/assistant") {
-        const body = await request.json().catch(() => ({}));
-        const chatId = Number(body.chatId);
-        const messageId = body.messageId ? Number(body.messageId) : null;
-        const content = String(body.content || "");
-        const provider = body.provider ? String(body.provider) : null;
-        const model = body.model ? String(body.model) : null;
-
-        if (!chatId) {
-          return json({ error: "chatId is required" }, 400);
-        }
-
-        if (messageId) {
-          const result = await updateAssistantMessage(db, {
-            userId: internalUserId,
-            chatId,
-            messageId,
-            content,
-            provider,
-            model
-          });
-
-          return json(result);
-        }
-
-        const inserted = await appendMessage(db, {
-          chatId,
-          role: "assistant",
-          content,
-          provider,
-          model
-        });
-
-        return json({
-          ok: true,
-          messageId: inserted.id
-        });
-      }
-
-      return json({ error: "Not found" }, 404);
-    } catch (error) {
-      return json({ error: error?.message || "Internal error" }, 500);
-    }
+  const mimeType = file.type || "application/octet-stream";
+  if (!mimeType.startsWith("image/")) {
+    return json({ error: "Only image uploads are allowed" }, 400);
   }
-};
+
+  const size = Number(file.size || 0);
+  if (size > 8 * 1024 * 1024) {
+    return json({ error: "File too large" }, 400);
+  }
+
+  const ext = (() => {
+    const fromName = String(file.name || "").split(".").pop()?.toLowerCase();
+    if (fromName && fromName !== file.name) return fromName;
+    if (mimeType === "image/png") return "png";
+    if (mimeType === "image/webp") return "webp";
+    if (mimeType === "image/gif") return "gif";
+    return "jpg";
+  })();
+
+  const safeName = String(file.name || `image.${ext}`).replace(/[^\w.\-]+/g, "_");
+  const key = `uploads/${userId}/${chatId}/${Date.now()}_${crypto.randomUUID()}.${ext}`;
+  const now = new Date().toISOString();
+
+  await env.FILES.put(key, file.stream(), {
+    httpMetadata: {
+      contentType: mimeType,
+      contentDisposition: `inline; filename="${safeName}"`
+    },
+    customMetadata: {
+      userId,
+      chatId,
+      originalName: safeName
+    }
+  });
+
+  const insert = await env.DB
+    .prepare(`
+      INSERT INTO attachments (
+        chat_id,
+        user_id,
+        kind,
+        r2_key,
+        file_name,
+        mime_type,
+        file_size,
+        created_at
+      )
+      VALUES (?, ?, 'image', ?, ?, ?, ?, ?)
+    `)
+    .bind(chatId, userId, key, safeName, mimeType, size, now)
+    .run();
+
+  return json({
+    attachment: {
+      id: insert.meta.last_row_id,
+      kind: "image",
+      r2_key: key,
+      file_name: safeName,
+      mime_type: mimeType,
+      file_size: size,
+      created_at: now,
+      url: fileUrlFor(env, key)
+    }
+  }, 201);
+}
+
+async function handleServeFile(env, key) {
+  const object = await env.FILES.get(key);
+  if (!object) {
+    return new Response("Not found", { status: 404, headers: corsHeaders() });
+  }
+
+  const headers = new Headers(corsHeaders());
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+
+  return new Response(object.body, {
+    headers
+  });
+}
