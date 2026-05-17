@@ -8,6 +8,11 @@ const MODEL_REGISTRY = {
     model: "auto"
   },
 
+  "github/gpt-4o-mini": {
+    provider: "github",
+    model: "gpt-4o-mini"
+  },
+
   "groq/llama-3.3-70b-versatile": {
     provider: "groq",
     model: "llama-3.3-70b-versatile"
@@ -18,14 +23,19 @@ const MODEL_REGISTRY = {
     model: "gemini-2.5-flash"
   },
 
+  "mistral/codestral": {
+    provider: "mistral",
+    model: "codestral-latest"
+  },
+
+  "mistral/mistral-large": {
+    provider: "mistral",
+    model: "mistral-large-latest"
+  },
+
   "meta/llama-3.3-70b-instruct": {
     provider: "openrouter",
     model: "meta-llama/llama-3.3-70b-instruct"
-  },
-
-  "qwen/qwen3-coder": {
-    provider: "openrouter",
-    model: "qwen/qwen3-coder"
   },
 
   "google/gemma-3-27b-it": {
@@ -43,26 +53,26 @@ const MODEL_REGISTRY = {
     model: "llama3.1-70b"
   },
 
-  "mistral/mistral-large": {
-    provider: "mistral",
-    model: "mistral-large-latest"
-  },
-
-  "mistral/codestral": {
-    provider: "mistral",
-    model: "codestral-latest"
-  },
-
-  "github/gpt-4o-mini": {
-    provider: "github",
-    model: "gpt-4o-mini"
-  },
-
   "github/phi-4": {
     provider: "github",
     model: "phi-4"
   }
 };
+
+function sseHeaders() {
+  return {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  };
+}
+
+function jsonHeaders() {
+  return {
+    "Content-Type": "application/json; charset=utf-8"
+  };
+}
 
 function hasImage(messages = []) {
   return messages.some((m) => {
@@ -97,18 +107,20 @@ function chooseAutoModel(messages = []) {
     };
   }
 
-  const codeHints = [
+  const codingHints = [
     "code", "js", "javascript", "typescript", "node", "sql", "regex", "json",
     "api", "bug", "error", "fix", "debug", "worker", "cloudflare", "vercel",
-    "deploy", "schema", "database", "frontend", "backend", "react", "next"
+    "deploy", "schema", "database", "frontend", "backend", "react", "next",
+    "css", "html", "python", "bash", "docker", "query", "migration"
   ];
 
   const hardReasoningHints = [
     "architecture", "архітект", "migration", "strategy", "compare", "порівняй",
-    "design", "analysis", "аналіз", "tradeoff", "scalability", "оптиміза"
+    "design", "analysis", "аналіз", "tradeoff", "scalability", "оптиміза",
+    "продумай", "спроєктуй", "сплануй"
   ];
 
-  if (codeHints.some((x) => text.includes(x))) {
+  if (codingHints.some((x) => text.includes(x))) {
     return {
       provider: "mistral",
       model: "codestral-latest"
@@ -141,7 +153,7 @@ function normalizeMessages(messages = []) {
       return {
         role: m.role,
         content: m.content.map((part) => {
-          if (part.type === "image_url") {
+          if (part?.type === "image_url") {
             return {
               type: "image_url",
               image_url: {
@@ -163,15 +175,6 @@ function normalizeMessages(messages = []) {
       content: ""
     };
   });
-}
-
-function sseHeaders() {
-  return {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no"
-  };
 }
 
 async function readError(res) {
@@ -287,9 +290,9 @@ async function fetchGemini(messages, body) {
         parts.push({ text: m.content });
       } else if (Array.isArray(m.content)) {
         for (const part of m.content) {
-          if (part.type === "text") {
+          if (part?.type === "text") {
             parts.push({ text: part.text || "" });
-          } else if (part.type === "image_url") {
+          } else if (part?.type === "image_url") {
             const dataUrl = part?.image_url?.url || "";
             const match = dataUrl.match(/^data:(.*?);base64,(.*)$/);
             if (match) {
@@ -342,10 +345,7 @@ async function handleOpenAICompatible(fetcher, messages, body) {
         error: "Provider error",
         details: err
       }),
-      {
-        status: res.status,
-        headers: { "Content-Type": "application/json" }
-      }
+      { status: res.status, headers: jsonHeaders() }
     );
   }
 
@@ -365,10 +365,7 @@ async function handleGemini(messages, body) {
         error: "Gemini error",
         details: err
       }),
-      {
-        status: res.status,
-        headers: { "Content-Type": "application/json" }
-      }
+      { status: res.status, headers: jsonHeaders() }
     );
   }
 
@@ -430,7 +427,7 @@ export default async function handler(req) {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { "Content-Type": "application/json" }
+      headers: jsonHeaders()
     });
   }
 
@@ -447,7 +444,7 @@ export default async function handler(req) {
     if (!selected) {
       return new Response(JSON.stringify({ error: "Unsupported model" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: jsonHeaders()
       });
     }
 
@@ -482,7 +479,7 @@ export default async function handler(req) {
 
     return new Response(JSON.stringify({ error: "Auto selection failed" }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: jsonHeaders()
     });
   } catch (error) {
     return new Response(
@@ -492,7 +489,7 @@ export default async function handler(req) {
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" }
+        headers: jsonHeaders()
       }
     );
   }
