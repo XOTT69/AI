@@ -86,10 +86,6 @@ async function chatBelongsToUser(env, chatId, userId) {
   return !!row;
 }
 
-function normalizeTimestamp(row) {
-  return row ? new Date(row).toISOString() : new Date().toISOString();
-}
-
 function fileUrlFor(env, key) {
   if (env.R2_PUBLIC_URL) {
     return `${String(env.R2_PUBLIC_URL).replace(/\/$/, "")}/${key}`;
@@ -250,10 +246,13 @@ async function handleDeleteChat(env, userId, chatId) {
 
   const keys = (attached || []).map((r) => r.r2_key).filter(Boolean);
   if (keys.length) {
-    await env.FILES.delete(keys);
+    for (const key of keys) {
+      await env.FILES.delete(key);
+    }
   }
 
-  await env.DB.prepare(`DELETE FROM message_attachments WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)`)
+  await env.DB
+    .prepare(`DELETE FROM message_attachments WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)`)
     .bind(chatId)
     .run();
 
