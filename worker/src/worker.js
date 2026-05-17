@@ -1,15 +1,13 @@
-function json(data, status = 200, cors = true) {
-  const headers = {
-    "Content-Type": "application/json; charset=utf-8"
-  };
-
-  if (cors) {
-    headers["Access-Control-Allow-Origin"] = "*";
-    headers["Access-Control-Allow-Methods"] = "GET,POST,DELETE,OPTIONS";
-    headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-User-Id";
-  }
-
-  return new Response(JSON.stringify(data), { status, headers });
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id"
+    }
+  });
 }
 
 function uid() {
