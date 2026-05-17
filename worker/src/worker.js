@@ -411,7 +411,7 @@ function buildCorsHeaders(request) {
     "http://localhost:4173",
     "https://ai1.ai-beta69690.workers.dev"
     // СЮДИ ДОДАЙ СВІЙ VERCEL DOMAIN:
-    // "https://your-project.vercel.app",
+    // "https://ai-beta-by.vercel.app/",
     // "https://your-custom-domain.com"
   ];
 
