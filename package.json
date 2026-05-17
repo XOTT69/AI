@@ -1,13 +1,12 @@
 {
-  "name": "nvidia-ai-chat-site",
+  "name": "ai-workspace",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+  "engines": {
+    "node": "20.x"
   },
-  "devDependencies": {
-    "wrangler": "^4.13.2"
+  "scripts": {
+    "build": "echo \"Vercel build ready\""
   }
 }
