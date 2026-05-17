@@ -2,7 +2,8 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id",
+    "Access-Control-Max-Age": "86400"
   };
 }
 
@@ -307,20 +308,20 @@ export default {
 
       if (request.method === "POST" && path === "/api/messages") {
         const body = await request.json().catch(() => ({}));
-        const text = String(body.content || "").trim();
+        const content = String(body.content || "").trim();
         const imageDataUrl = body.imageDataUrl || null;
 
-        if (!text && !imageDataUrl) {
+        if (!content && !imageDataUrl) {
           return json({ error: "Message content is required" }, 400);
         }
 
-        const title = text ? text.slice(0, 40) : "Новий чат";
+        const title = content ? content.slice(0, 48) : "Новий чат";
         const chat = await ensureChat(db, userId, body.chatId || null, title);
 
         const userMessage = await appendMessage(db, {
           chatId: chat.id,
           role: "user",
-          content: text,
+          content,
           imageDataUrl
         });
 
