@@ -1,0 +1,12 @@
+{
+  "name": "ai1",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-05-17",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ai1-db",
+      "database_id": "YOUR_D1_DATABASE_ID"
+    }
+  ]
+}
