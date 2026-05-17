@@ -35,9 +35,7 @@ export default {
       }
 
       const userId = getUserId(request);
-      const publicRoutes = new Set(["/api/health"]);
-
-      if (!publicRoutes.has(url.pathname) && !userId) {
+      if (!userId && url.pathname !== "/api/health") {
         return json(request, { error: "Missing X-User-Id header", reqId }, 401);
       }
 
@@ -47,6 +45,7 @@ export default {
             c.id,
             c.title,
             c.model,
+            c.system_prompt,
             c.created_at,
             c.updated_at,
             (
@@ -66,36 +65,30 @@ export default {
 
       if (url.pathname === "/api/chats" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
-        const title = String(body?.title || "Новий чат").slice(0, 120);
-        const model = String(body?.model || "auto").slice(0, 120);
-        const now = new Date().toISOString();
+        const title = String(body?.title || "New chat").slice(0, 120);
+        const model = String(body?.model || "").slice(0, 120);
+        const systemPrompt = String(body?.system_prompt || "");
 
         const result = await env.DB.prepare(`
-          INSERT INTO chats (user_id, title, model, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).bind(userId, title, model, now, now).run();
+          INSERT INTO chats (user_id, title, model, system_prompt)
+          VALUES (?, ?, ?, ?)
+        `).bind(userId, title, model || null, systemPrompt || null).run();
 
-        return json(
-          request,
-          {
-            chat: {
-              id: result.meta?.last_row_id ?? null,
-              title,
-              model,
-              created_at: now,
-              updated_at: now
-            },
-            reqId
-          },
-          201
-        );
+        const chat = await env.DB.prepare(`
+          SELECT id, user_id, title, model, system_prompt, created_at, updated_at
+          FROM chats
+          WHERE id = ? AND user_id = ?
+          LIMIT 1
+        `).bind(result.meta?.last_row_id, userId).first();
+
+        return json(request, { chat, reqId }, 201);
       }
 
       if (/^\/api\/chats\/\d+$/.test(url.pathname) && request.method === "GET") {
-        const chatId = url.pathname.split("/").pop();
+        const chatId = Number(url.pathname.split("/").pop());
 
         const chat = await env.DB.prepare(`
-          SELECT id, title, model, created_at, updated_at
+          SELECT id, user_id, title, model, system_prompt, created_at, updated_at
           FROM chats
           WHERE id = ? AND user_id = ?
           LIMIT 1
@@ -106,7 +99,16 @@ export default {
         }
 
         const { results: messageRows } = await env.DB.prepare(`
-          SELECT id, role, content, model, created_at
+          SELECT
+            id,
+            chat_id,
+            role,
+            content,
+            provider,
+            model,
+            prompt_tokens,
+            completion_tokens,
+            created_at
           FROM messages
           WHERE chat_id = ?
           ORDER BY id ASC
@@ -114,42 +116,47 @@ export default {
 
         const { results: attachmentRows } = await env.DB.prepare(`
           SELECT
-            ma.message_id,
-            a.id,
-            a.kind,
-            a.r2_key,
-            a.file_name,
-            a.mime_type,
-            a.file_size,
-            a.created_at
-          FROM message_attachments ma
-          JOIN attachments a ON a.id = ma.attachment_id
-          WHERE a.chat_id = ?
-          ORDER BY a.id ASC
-        `).bind(chatId).all();
+            id,
+            message_id,
+            user_id,
+            chat_id,
+            name,
+            type,
+            size,
+            url,
+            r2_key,
+            created_at
+          FROM message_attachments
+          WHERE chat_id = ? AND user_id = ?
+          ORDER BY id ASC
+        `).bind(chatId, userId).all();
 
         const attachMap = new Map();
         for (const row of attachmentRows || []) {
-          const key = String(row.message_id);
+          const key = String(row.message_id || "");
           const list = attachMap.get(key) || [];
           list.push({
             id: row.id,
-            kind: row.kind,
-            file_name: row.file_name,
-            mime_type: row.mime_type,
-            file_size: row.file_size,
-            created_at: row.created_at,
-            url: fileUrlFor(env, row.r2_key)
+            name: row.name,
+            type: row.type,
+            size: row.size,
+            url: row.url || fileUrlFor(env, row.r2_key),
+            r2_key: row.r2_key,
+            created_at: row.created_at
           });
           attachMap.set(key, list);
         }
 
         const messages = (messageRows || []).map((row) => ({
           id: String(row.id),
+          chat_id: row.chat_id,
           role: row.role,
-          content: row.content || "",
-          model: row.model || "",
-          createdAt: row.created_at,
+          content: row.content,
+          provider: row.provider,
+          model: row.model,
+          prompt_tokens: row.prompt_tokens,
+          completion_tokens: row.completion_tokens,
+          created_at: row.created_at,
           attachments: attachMap.get(String(row.id)) || []
         }));
 
@@ -157,11 +164,7 @@ export default {
           request,
           {
             chat: {
-              id: String(chat.id),
-              title: chat.title,
-              model: chat.model || "auto",
-              createdAt: chat.created_at,
-              updatedAt: chat.updated_at,
+              ...chat,
               messages
             },
             reqId
@@ -171,7 +174,7 @@ export default {
       }
 
       if (/^\/api\/chats\/\d+$/.test(url.pathname) && request.method === "DELETE") {
-        const chatId = url.pathname.split("/").pop();
+        const chatId = Number(url.pathname.split("/").pop());
 
         const exists = await env.DB.prepare(`
           SELECT id
@@ -184,13 +187,13 @@ export default {
           return json(request, { error: "Chat not found", reqId }, 404);
         }
 
-        const { results: attached } = await env.DB.prepare(`
+        const { results: files } = await env.DB.prepare(`
           SELECT r2_key
-          FROM attachments
-          WHERE chat_id = ?
-        `).bind(chatId).all();
+          FROM message_attachments
+          WHERE chat_id = ? AND user_id = ?
+        `).bind(chatId, userId).all();
 
-        for (const row of attached || []) {
+        for (const row of files || []) {
           if (row.r2_key) {
             await env.FILES.delete(row.r2_key);
           }
@@ -198,18 +201,19 @@ export default {
 
         await env.DB.prepare(`
           DELETE FROM message_attachments
-          WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)
-        `).bind(chatId).run();
+          WHERE chat_id = ? AND user_id = ?
+        `).bind(chatId, userId).run();
 
-        await env.DB.prepare(`DELETE FROM attachments WHERE chat_id = ?`).bind(chatId).run();
-        await env.DB.prepare(`DELETE FROM messages WHERE chat_id = ?`).bind(chatId).run();
-        await env.DB.prepare(`DELETE FROM chats WHERE id = ? AND user_id = ?`).bind(chatId, userId).run();
+        await env.DB.prepare(`
+          DELETE FROM chats
+          WHERE id = ? AND user_id = ?
+        `).bind(chatId, userId).run();
 
         return json(request, { ok: true, reqId }, 200);
       }
 
       if (/^\/api\/chats\/\d+\/messages$/.test(url.pathname) && request.method === "POST") {
-        const chatId = url.pathname.split("/")[3];
+        const chatId = Number(url.pathname.split("/")[3]);
 
         const exists = await env.DB.prepare(`
           SELECT id
@@ -225,49 +229,48 @@ export default {
         const body = await request.json().catch(() => ({}));
         const role = String(body?.role || "user").slice(0, 20);
         const content = String(body?.content || "");
-        const model = String(body?.model || "auto").slice(0, 120);
-        const attachments = Array.isArray(body?.attachments) ? body.attachments : [];
-        const now = new Date().toISOString();
+        const provider = body?.provider ? String(body.provider).slice(0, 120) : null;
+        const model = body?.model ? String(body.model).slice(0, 120) : null;
+        const promptTokens = Number(body?.prompt_tokens || 0);
+        const completionTokens = Number(body?.completion_tokens || 0);
 
         const insertResult = await env.DB.prepare(`
-          INSERT INTO messages (chat_id, role, content, model, created_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).bind(chatId, role, content, model, now).run();
-
-        const messageId = insertResult.meta?.last_row_id ?? null;
-
-        for (const attachmentId of attachments) {
-          await env.DB.prepare(`
-            INSERT INTO message_attachments (message_id, attachment_id)
-            VALUES (?, ?)
-          `).bind(messageId, attachmentId).run();
-        }
+          INSERT INTO messages (
+            chat_id, role, content, provider, model, prompt_tokens, completion_tokens
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          chatId,
+          role,
+          content,
+          provider,
+          model,
+          promptTokens,
+          completionTokens
+        ).run();
 
         await env.DB.prepare(`
           UPDATE chats
-          SET updated_at = ?
+          SET updated_at = CURRENT_TIMESTAMP
           WHERE id = ? AND user_id = ?
-        `).bind(now, chatId, userId).run();
+        `).bind(chatId, userId).run();
 
-        return json(
-          request,
-          {
-            message: {
-              id: messageId,
-              role,
-              content,
-              model,
-              created_at: now
-            },
-            reqId
-          },
-          201
-        );
+        const message = await env.DB.prepare(`
+          SELECT
+            id, chat_id, role, content, provider, model,
+            prompt_tokens, completion_tokens, created_at
+          FROM messages
+          WHERE id = ?
+          LIMIT 1
+        `).bind(insertResult.meta?.last_row_id).first();
+
+        return json(request, { message, reqId }, 201);
       }
 
       if (url.pathname === "/api/attachments/upload" && request.method === "POST") {
         const form = await request.formData();
-        const chatId = String(form.get("chat_id") || "");
+        const chatId = Number(form.get("chat_id") || 0);
+        const messageId = Number(form.get("message_id") || 0);
         const file = form.get("file");
 
         if (!chatId) {
@@ -278,15 +281,28 @@ export default {
           return json(request, { error: "file required", reqId }, 400);
         }
 
-        const exists = await env.DB.prepare(`
+        const chat = await env.DB.prepare(`
           SELECT id
           FROM chats
           WHERE id = ? AND user_id = ?
           LIMIT 1
         `).bind(chatId, userId).first();
 
-        if (!exists) {
+        if (!chat) {
           return json(request, { error: "Chat not found", reqId }, 404);
+        }
+
+        if (messageId) {
+          const msg = await env.DB.prepare(`
+            SELECT id
+            FROM messages
+            WHERE id = ? AND chat_id = ?
+            LIMIT 1
+          `).bind(messageId, chatId).first();
+
+          if (!msg) {
+            return json(request, { error: "Message not found", reqId }, 404);
+          }
         }
 
         const mimeType = file.type || "application/octet-stream";
@@ -302,7 +318,6 @@ export default {
         const ext = getExtension(file.name, mimeType);
         const safeName = String(file.name || `image.${ext}`).replace(/[^\w.\-]+/g, "_");
         const key = `uploads/${userId}/${chatId}/${Date.now()}_${crypto.randomUUID()}.${ext}`;
-        const now = new Date().toISOString();
 
         await env.FILES.put(key, file.stream(), {
           httpMetadata: {
@@ -310,43 +325,48 @@ export default {
             contentDisposition: `inline; filename="${safeName}"`
           },
           customMetadata: {
-            userId,
-            chatId,
+            userId: String(userId),
+            chatId: String(chatId),
+            messageId: String(messageId || ""),
             originalName: safeName
           }
         });
 
-        const insert = await env.DB.prepare(`
-          INSERT INTO attachments (
-            chat_id,
-            user_id,
-            kind,
-            r2_key,
-            file_name,
-            mime_type,
-            file_size,
-            created_at
-          )
-          VALUES (?, ?, 'image', ?, ?, ?, ?, ?)
-        `).bind(chatId, userId, key, safeName, mimeType, size, now).run();
+        const publicUrl = fileUrlFor(env, key);
 
-        return json(
-          request,
-          {
-            attachment: {
-              id: insert.meta?.last_row_id ?? null,
-              kind: "image",
-              r2_key: key,
-              file_name: safeName,
-              mime_type: mimeType,
-              file_size: size,
-              created_at: now,
-              url: fileUrlFor(env, key)
-            },
-            reqId
-          },
-          201
-        );
+        const insert = await env.DB.prepare(`
+          INSERT INTO message_attachments (
+            message_id,
+            user_id,
+            chat_id,
+            name,
+            type,
+            size,
+            url,
+            r2_key
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          messageId || null,
+          userId,
+          chatId,
+          safeName,
+          mimeType,
+          size,
+          publicUrl,
+          key
+        ).run();
+
+        const attachment = await env.DB.prepare(`
+          SELECT
+            id, message_id, user_id, chat_id,
+            name, type, size, url, r2_key, created_at
+          FROM message_attachments
+          WHERE id = ?
+          LIMIT 1
+        `).bind(insert.meta?.last_row_id).first();
+
+        return json(request, { attachment, reqId }, 201);
       }
 
       if (url.pathname.startsWith("/api/files/") && request.method === "GET") {
@@ -383,7 +403,9 @@ export default {
 };
 
 function getUserId(request) {
-  return String(request.headers.get("X-User-Id") || "").trim();
+  const raw = String(request.headers.get("X-User-Id") || "").trim();
+  const num = Number(raw);
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 function getExtension(fileName, mimeType) {
