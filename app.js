@@ -33,61 +33,17 @@ const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
 const STORAGE_KEY = "ai-chat-worker-v2";
 
 const ALLOWED_MODELS = {
-  auto: {
-    system: "Ти корисний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: true
-  },
-  "github/gpt-4o-mini": {
-    system: "Ти корисний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "groq/llama-3.3-70b-versatile": {
-    system: "Ти швидкий і точний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "gemini/gemini-2.5-flash": {
-    system: "Ти мультимодальний AI-помічник Gemini. Відповідай українською.",
-    tokens: 4096,
-    vision: true
-  },
-  "mistral/codestral": {
-    system: "Ти сильний AI-помічник для коду і технічних задач. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "mistral/mistral-large": {
-    system: "Ти потужний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "meta/llama-3.3-70b-instruct": {
-    system: "Ти потужний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "google/gemma-3-27b-it": {
-    system: "Ти мультимодальний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: true
-  },
-  "meta/llama-3.2-90b-vision-instruct": {
-    system: "Ти AI-помічник для аналізу зображень. Відповідай українською.",
-    tokens: 2048,
-    vision: true
-  },
-  "cerebras/llama-3.1-70b": {
-    system: "Ти швидкий AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  },
-  "github/phi-4": {
-    system: "Ти розумний AI-помічник. Відповідай українською.",
-    tokens: 4096,
-    vision: false
-  }
+  auto: { system: "Ти корисний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
+  "github/gpt-4o-mini": { system: "Ти корисний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
+  "groq/llama-3.3-70b-versatile": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
+  "gemini/gemini-2.5-flash": { system: "Ти мультимодальний AI-помічник Gemini. Відповідай українською.", tokens: 4096, vision: true },
+  "mistral/codestral": { system: "Ти сильний AI-помічник для коду і технічних задач. Відповідай українською.", tokens: 4096, vision: false },
+  "mistral/mistral-large": { system: "Ти потужний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
+  "meta/llama-3.3-70b-instruct": { system: "Ти потужний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
+  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
+  "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
+  "cerebras/llama-3.1-70b": { system: "Ти швидкий AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
+  "github/phi-4": { system: "Ти розумний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
 };
 
 let sb = null;
@@ -103,11 +59,7 @@ let hasLoadedChats = false;
 
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
-  state = {
-    activeChatId: null,
-    chats: [],
-    drafts: {}
-  };
+  state = { activeChatId: null, chats: [], drafts: {} };
 }
 if (!state.drafts || typeof state.drafts !== "object") state.drafts = {};
 
@@ -118,11 +70,7 @@ renderer.code = function (code, language) {
   return `<pre><code class="hljs ${validLang}">${highlighted}</code></pre>`;
 };
 
-marked.setOptions({
-  renderer,
-  breaks: true,
-  gfm: true
-});
+marked.setOptions({ renderer, breaks: true, gfm: true });
 
 function formatThinking(text) {
   if (!text) return "";
@@ -458,7 +406,7 @@ async function historyJson(path, method = "GET", body = null) {
   });
 }
 
-async function uploadAttachment(chatId, file, localPreviewUrl = "") {
+async function uploadAttachment(chatId, file) {
   const fd = new FormData();
   fd.append("chat_id", String(chatId));
   fd.append("file", file);
@@ -473,11 +421,7 @@ async function uploadAttachment(chatId, file, localPreviewUrl = "") {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || "Upload error");
-
-  return {
-    localPreviewUrl,
-    ...data.attachment
-  };
+  return data.attachment;
 }
 
 async function loadChatsFromWorker() {
@@ -564,7 +508,7 @@ window.retryMessage = function () {
   sendChatMessage(lastUserMsg.content, true);
 };
 
-function buildMessagesForAPI(active, assistantMsgId, modelConf) {
+function buildMessagesForAPI(active, assistantMsgId, modelConf, imageUrl = null) {
   const rawMessages = [{ role: "system", content: modelConf.system }];
   const recent = active.messages
     .slice(-12)
@@ -572,10 +516,24 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
 
   for (const m of recent) {
     if (m.role === "user") {
-      rawMessages.push({
-        role: "user",
-        content: (m.content || "").trim()
-      });
+      if (
+        imageUrl &&
+        modelConf.vision &&
+        m === recent[recent.length - 1]
+      ) {
+        rawMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: (m.content || "").trim() },
+            { type: "image_url", image_url: { url: imageUrl } }
+          ]
+        });
+      } else {
+        rawMessages.push({
+          role: "user",
+          content: (m.content || "").trim()
+        });
+      }
     } else if (m.role === "assistant") {
       rawMessages.push({
         role: "assistant",
@@ -584,29 +542,7 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
     }
   }
 
-  const normalized = [];
-  let systemMessage = null;
-
-  for (const msg of rawMessages) {
-    if (msg.role === "system") {
-      systemMessage = msg;
-      continue;
-    }
-
-    if (!normalized.length) {
-      normalized.push(msg);
-      continue;
-    }
-
-    const prev = normalized[normalized.length - 1];
-    if (prev.role === msg.role) {
-      prev.content += `\n${msg.content.trim()}`;
-    } else {
-      normalized.push(msg);
-    }
-  }
-
-  return systemMessage ? [systemMessage, ...normalized] : normalized;
+  return rawMessages;
 }
 
 async function ensureServerChatForActive(firstMessageText = "Новий чат") {
@@ -659,7 +595,7 @@ async function sendChatMessage(text, isRetry = false) {
     let uploadedAttachment = null;
     if (selectedImage?.file) {
       setBusy(true, "Завантажую фото...");
-      uploadedAttachment = await uploadAttachment(active.id, selectedImage.file, selectedImage.dataUrl);
+      uploadedAttachment = await uploadAttachment(active.id, selectedImage.file);
     }
 
     let userMessage = null;
@@ -713,8 +649,7 @@ async function sendChatMessage(text, isRetry = false) {
     saveState();
     renderAll();
 
-    const messages = buildMessagesForAPI(active, assistantMessage.id, modelConf);
-
+    const messages = buildMessagesForAPI(active, assistantMessage.id, modelConf, uploadedAttachment?.url || null);
     currentController = new AbortController();
 
     const response = await fetch("/api/proxy", {
@@ -726,8 +661,7 @@ async function sendChatMessage(text, isRetry = false) {
       body: JSON.stringify({
         model: modelId,
         messages,
-        max_tokens: modelConf.tokens,
-        image_url: uploadedAttachment?.url || null
+        max_tokens: modelConf.tokens
       })
     });
 
@@ -798,9 +732,7 @@ googleLoginBtn?.addEventListener("click", async () => {
   if (!sb) return;
   await sb.auth.signInWithOAuth({
     provider: "google",
-    options: {
-      redirectTo: window.location.origin
-    }
+    options: { redirectTo: window.location.origin }
   });
 });
 
@@ -905,9 +837,7 @@ window.addEventListener("orientationchange", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    autoResize();
-  }
+  if (!document.hidden) autoResize();
 });
 
 (function boot() {
