@@ -1,11 +1,17 @@
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id"
+  };
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id"
+      ...corsHeaders()
     }
   });
 }
@@ -18,8 +24,24 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function toMillis(value) {
+  return value ? new Date(value).getTime() : Date.now();
+}
+
+async function getChatById(db, userId, chatId) {
+  return db
+    .prepare(`
+      SELECT id, user_id, title, created_at, updated_at
+      FROM chats
+      WHERE id = ? AND user_id = ?
+      LIMIT 1
+    `)
+    .bind(chatId, userId)
+    .first();
+}
+
 async function getChatMessages(db, chatId) {
-  const { results } = await db
+  const result = await db
     .prepare(`
       SELECT id, role, content, image_data_url, is_error, created_at
       FROM messages
@@ -29,18 +51,18 @@ async function getChatMessages(db, chatId) {
     .bind(chatId)
     .all();
 
-  return (results || []).map((row) => ({
+  return (result.results || []).map((row) => ({
     id: row.id,
     role: row.role,
     content: row.content || "",
     image: row.image_data_url ? { dataUrl: row.image_data_url } : null,
-    isError: !!row.is_error,
-    createdAt: new Date(row.created_at).getTime()
+    isError: Boolean(row.is_error),
+    createdAt: toMillis(row.created_at)
   }));
 }
 
 async function getChatsWithPreview(db, userId) {
-  const { results } = await db
+  const result = await db
     .prepare(`
       SELECT
         c.id,
@@ -61,7 +83,13 @@ async function getChatsWithPreview(db, userId) {
     .bind(userId)
     .all();
 
-  return results || [];
+  return (result.results || []).map((row) => ({
+    id: row.id,
+    title: row.title || "Новий чат",
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    preview: row.preview || ""
+  }));
 }
 
 async function createChat(db, userId, title = "Новий чат") {
@@ -87,18 +115,14 @@ async function createChat(db, userId, title = "Новий чат") {
 
 async function ensureChat(db, userId, chatId, fallbackTitle = "Новий чат") {
   if (chatId) {
-    const existing = await db
-      .prepare(`SELECT * FROM chats WHERE id = ? AND user_id = ? LIMIT 1`)
-      .bind(chatId, userId)
-      .first();
-
+    const existing = await getChatById(db, userId, chatId);
     if (existing) return existing;
   }
 
   return createChat(db, userId, fallbackTitle);
 }
 
-async function appendMessage(db, { chatId, role, content = "", imageDataUrl = null, isError = 0 }) {
+async function appendMessage(db, { chatId, role, content = "", imageDataUrl = null, isError = false }) {
   const id = uid();
   const ts = nowIso();
 
@@ -111,7 +135,11 @@ async function appendMessage(db, { chatId, role, content = "", imageDataUrl = nu
     .run();
 
   await db
-    .prepare(`UPDATE chats SET updated_at = ? WHERE id = ?`)
+    .prepare(`
+      UPDATE chats
+      SET updated_at = ?
+      WHERE id = ?
+    `)
     .bind(ts, chatId)
     .run();
 
@@ -121,37 +149,62 @@ async function appendMessage(db, { chatId, role, content = "", imageDataUrl = nu
     role,
     content,
     image: imageDataUrl ? { dataUrl: imageDataUrl } : null,
-    isError: !!isError,
-    createdAt: new Date(ts).getTime()
+    isError: Boolean(isError),
+    createdAt: toMillis(ts)
   };
 }
 
-async function replaceAssistantDraft(db, { chatId, messageId, content }) {
-  await db
+async function upsertAssistantMessage(db, { userId, chatId, messageId, content, isError = false }) {
+  const chat = await getChatById(db, userId, chatId);
+  if (!chat) {
+    throw new Error("Chat not found");
+  }
+
+  const existing = await db
     .prepare(`
-      UPDATE messages
-      SET content = ?
-      WHERE id = ? AND chat_id = ? AND role = 'assistant'
+      SELECT id
+      FROM messages
+      WHERE id = ? AND chat_id = ?
+      LIMIT 1
     `)
-    .bind(content, messageId, chatId)
-    .run();
+    .bind(messageId, chatId)
+    .first();
+
+  if (existing) {
+    await db
+      .prepare(`
+        UPDATE messages
+        SET content = ?, is_error = ?
+        WHERE id = ? AND chat_id = ? AND role = 'assistant'
+      `)
+      .bind(content, isError ? 1 : 0, messageId, chatId)
+      .run();
+  } else {
+    await db
+      .prepare(`
+        INSERT INTO messages (id, chat_id, role, content, image_data_url, is_error, created_at)
+        VALUES (?, ?, 'assistant', ?, NULL, ?, ?)
+      `)
+      .bind(messageId, chatId, content, isError ? 1 : 0, nowIso())
+      .run();
+  }
 
   await db
-    .prepare(`UPDATE chats SET updated_at = ? WHERE id = ?`)
+    .prepare(`
+      UPDATE chats
+      SET updated_at = ?
+      WHERE id = ?
+    `)
     .bind(nowIso(), chatId)
     .run();
+
+  return { ok: true, messageId };
 }
 
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id"
-        }
-      });
+      return new Response(null, { headers: corsHeaders() });
     }
 
     const url = new URL(request.url);
@@ -159,11 +212,19 @@ export default {
     const db = env.DB;
     const userId = request.headers.get("X-User-Id");
 
+    if (!db) {
+      return json({ error: "D1 binding DB is missing" }, 500);
+    }
+
     if (!userId) {
       return json({ error: "Missing X-User-Id" }, 401);
     }
 
     try {
+      if (request.method === "GET" && path === "/api/health") {
+        return json({ ok: true, worker: "ai1", db: "connected" });
+      }
+
       if (request.method === "GET" && path === "/api/chats") {
         const chats = await getChatsWithPreview(db, userId);
         return json({ chats });
@@ -171,34 +232,41 @@ export default {
 
       if (request.method === "POST" && path === "/api/chats") {
         const body = await request.json().catch(() => ({}));
-        const chat = await createChat(db, userId, body.title || "Новий чат");
+        const title = String(body.title || "Новий чат").trim() || "Новий чат";
+        const chat = await createChat(db, userId, title);
         return json({ chat });
       }
 
       if (request.method === "POST" && path === "/api/chats/ensure") {
         const body = await request.json().catch(() => ({}));
-        const chat = await ensureChat(db, userId, body.chatId, body.title || "Новий чат");
+        const chat = await ensureChat(
+          db,
+          userId,
+          body.chatId || null,
+          String(body.title || "Новий чат").trim() || "Новий чат"
+        );
         return json({ chat });
       }
 
       if (request.method === "GET" && path.startsWith("/api/chats/")) {
         const parts = path.split("/").filter(Boolean);
+
         if (parts.length === 3 && parts[0] === "api" && parts[1] === "chats") {
           const chatId = parts[2];
-          const chat = await db
-            .prepare(`SELECT * FROM chats WHERE id = ? AND user_id = ? LIMIT 1`)
-            .bind(chatId, userId)
-            .first();
+          const chat = await getChatById(db, userId, chatId);
 
-          if (!chat) return json({ error: "Chat not found" }, 404);
+          if (!chat) {
+            return json({ error: "Chat not found" }, 404);
+          }
 
           const messages = await getChatMessages(db, chatId);
+
           return json({
             chat: {
               id: chat.id,
-              title: chat.title,
-              createdAt: new Date(chat.created_at).getTime(),
-              updatedAt: new Date(chat.updated_at).getTime(),
+              title: chat.title || "Новий чат",
+              createdAt: toMillis(chat.created_at),
+              updatedAt: toMillis(chat.updated_at),
               messages
             }
           });
@@ -207,15 +275,14 @@ export default {
 
       if (request.method === "DELETE" && path.startsWith("/api/chats/")) {
         const parts = path.split("/").filter(Boolean);
+
         if (parts.length === 3 && parts[0] === "api" && parts[1] === "chats") {
           const chatId = parts[2];
+          const chat = await getChatById(db, userId, chatId);
 
-          const existing = await db
-            .prepare(`SELECT id FROM chats WHERE id = ? AND user_id = ? LIMIT 1`)
-            .bind(chatId, userId)
-            .first();
-
-          if (!existing) return json({ error: "Chat not found" }, 404);
+          if (!chat) {
+            return json({ error: "Chat not found" }, 404);
+          }
 
           await db.batch([
             db.prepare(`DELETE FROM messages WHERE chat_id = ?`).bind(chatId),
@@ -236,7 +303,7 @@ export default {
         }
 
         const title = text ? text.slice(0, 40) : "Новий чат";
-        const chat = await ensureChat(db, userId, body.chatId, title);
+        const chat = await ensureChat(db, userId, body.chatId || null, title);
 
         const userMessage = await appendMessage(db, {
           chatId: chat.id,
@@ -248,7 +315,7 @@ export default {
         return json({
           chat: {
             id: chat.id,
-            title: chat.title
+            title: chat.title || title
           },
           message: userMessage
         });
@@ -256,46 +323,24 @@ export default {
 
       if (request.method === "POST" && path === "/api/messages/assistant") {
         const body = await request.json().catch(() => ({}));
-        const chatId = body.chatId;
+        const chatId = String(body.chatId || "").trim();
+        const messageId = String(body.messageId || uid()).trim();
         const content = String(body.content || "");
-        const draftId = body.messageId || uid();
+        const isError = Boolean(body.isError);
 
-        if (!chatId) return json({ error: "chatId is required" }, 400);
-
-        const chat = await db
-          .prepare(`SELECT id FROM chats WHERE id = ? AND user_id = ? LIMIT 1`)
-          .bind(chatId, userId)
-          .first();
-
-        if (!chat) return json({ error: "Chat not found" }, 404);
-
-        const existing = await db
-          .prepare(`SELECT id FROM messages WHERE id = ? AND chat_id = ? LIMIT 1`)
-          .bind(draftId, chatId)
-          .first();
-
-        if (!existing) {
-          await db
-            .prepare(`
-              INSERT INTO messages (id, chat_id, role, content, image_data_url, is_error, created_at)
-              VALUES (?, ?, 'assistant', ?, NULL, 0, ?)
-            `)
-            .bind(draftId, chatId, content, nowIso())
-            .run();
-        } else {
-          await replaceAssistantDraft(db, {
-            chatId,
-            messageId: draftId,
-            content
-          });
+        if (!chatId) {
+          return json({ error: "chatId is required" }, 400);
         }
 
-        await db
-          .prepare(`UPDATE chats SET updated_at = ? WHERE id = ?`)
-          .bind(nowIso(), chatId)
-          .run();
+        const result = await upsertAssistantMessage(db, {
+          userId,
+          chatId,
+          messageId,
+          content,
+          isError
+        });
 
-        return json({ ok: true, messageId: draftId });
+        return json(result);
       }
 
       return json({ error: "Not found" }, 404);
