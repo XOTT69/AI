@@ -28,7 +28,9 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
-const STORAGE_KEY = "ai-chat-sync-v51";
+const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
+
+const STORAGE_KEY = "ai-chat-worker-v1";
 
 const ALLOWED_MODELS = {
   "groq/llama-3.3-70b-versatile": {
@@ -64,7 +66,7 @@ const ALLOWED_MODELS = {
 };
 
 let sb = null;
-if (SUPABASE_URL && SUPABASE_KEY && window.supabase) {
+if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
@@ -72,17 +74,9 @@ let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
-let hasSyncedOnLoad = false;
-let syncTimeout = null;
+let hasLoadedChats = false;
 
-let state = JSON.parse(
-  localStorage.getItem(STORAGE_KEY) ||
-  localStorage.getItem("ai-chat-sync-v50") ||
-  localStorage.getItem("ai-chat-sync-v49") ||
-  localStorage.getItem("ai-chat-sync-v48") ||
-  "null"
-);
-
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
 if (!state || !Array.isArray(state.chats)) {
   state = {
     activeChatId: null,
@@ -142,96 +136,39 @@ function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
 function getActiveChat() {
   return state.chats.find((c) => c.id === state.activeChatId) || null;
 }
 
-function getChatUpdatedAt(chat) {
-  if (!chat) return 0;
-
-  const own =
-    Number(chat.updatedAt || 0) ||
-    Number(chat.createdAt || 0) ||
-    0;
-
-  const lastMsg = Array.isArray(chat.messages) && chat.messages.length
-    ? Math.max(
-        ...chat.messages.map((m) =>
-          Number(m?.createdAt || m?.updatedAt || 0) || 0
-        )
-      )
-    : 0;
-
-  return Math.max(own, lastMsg);
-}
-
-function normalizeChat(chat) {
-  return {
-    id: chat.id,
-    title: chat.title || "Новий чат",
-    messages: Array.isArray(chat.messages) ? chat.messages : [],
-    createdAt: Number(chat.createdAt || Date.now()),
-    updatedAt: getChatUpdatedAt(chat)
-  };
-}
-
-function mergeChats(localChats = [], cloudChats = []) {
-  const map = new Map();
-
-  for (const item of localChats) {
-    if (!item?.id) continue;
-    map.set(item.id, normalizeChat(item));
-  }
-
-  for (const item of cloudChats) {
-    if (!item?.id) continue;
-    const normalized = normalizeChat(item);
-    const existing = map.get(item.id);
-
-    if (!existing || normalized.updatedAt >= existing.updatedAt) {
-      map.set(item.id, normalized);
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-function touchChat(chat) {
-  if (!chat) return;
-  chat.updatedAt = Date.now();
-}
-
-function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    if (state.chats.length > 20) {
-      state.chats = state.chats.slice(0, 20);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
-  }
-
-  clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(() => {
-    syncAllChatsToCloud().catch(console.error);
-  }, 1200);
-}
-
-function ensureChat() {
+function ensureLocalChatStub() {
   let active = getActiveChat();
   if (!active) {
     active = {
-      id: uid(),
+      id: null,
+      localId: uid(),
       title: "Новий чат",
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
     state.chats.unshift(active);
-    state.activeChatId = active.id;
+    state.activeChatId = active.localId;
     saveState();
   }
   return active;
+}
+
+function getChatKey(chatItem) {
+  return chatItem.id || chatItem.localId;
+}
+
+function setActiveChatByAnyId(id) {
+  const found = state.chats.find((c) => c.id === id || c.localId === id);
+  if (found) state.activeChatId = getChatKey(found);
 }
 
 function applyTheme() {
@@ -264,15 +201,18 @@ function renderChatList() {
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
+    const isActive = getChatKey(item) === state.activeChatId;
+    const subtitle =
+      (item.messages || []).find((m) => m.role === "user")?.content ||
+      item.preview ||
+      "Порожній чат";
+
     const div = document.createElement("div");
-    div.className = `chat-item ${item.id === state.activeChatId ? "active" : ""}`;
-
-    const subtitle = (item.messages || []).find((m) => m.role === "user")?.content || "Порожній чат";
-
+    div.className = `chat-item ${isActive ? "active" : ""}`;
     div.innerHTML = `
       <div class="chat-item-main">
         <div class="chat-item-title">${item.title || "Новий чат"}</div>
-        <div class="chat-item-subtitle">${String(subtitle).slice(0, 80)}</div>
+        <div class="chat-item-subtitle">${String(subtitle).slice(0, 90)}</div>
       </div>
       <button class="chat-item-delete" title="Видалити">✕</button>
     `;
@@ -281,23 +221,30 @@ function renderChatList() {
       e.stopPropagation();
       if (!confirm("Видалити цей чат?")) return;
 
-      state.chats = state.chats.filter((c) => c.id !== item.id);
-      if (state.activeChatId === item.id) {
-        state.activeChatId = state.chats[0]?.id || null;
+      if (item.id && currentUser) {
+        await historyApi(`/api/chats/${item.id}`, {
+          method: "DELETE"
+        }).catch(console.error);
       }
+
+      state.chats = state.chats.filter((c) => getChatKey(c) !== getChatKey(item));
+      state.activeChatId = getChatKey(state.chats[0] || {}) || null;
       saveState();
       renderAll();
-
-      if (currentUser && sb) {
-        await sb.from("chats").delete().eq("id", item.id).eq("user_id", currentUser.id);
-      }
     };
 
-    div.onclick = () => {
+    div.onclick = async () => {
       if (requestInFlight) return;
-      state.activeChatId = item.id;
+
+      state.activeChatId = getChatKey(item);
       saveState();
-      renderAll();
+
+      if (item.id && currentUser) {
+        await loadChatDetails(item.id);
+      } else {
+        renderAll();
+      }
+
       sidebar?.classList.remove("open");
       mobileOverlay?.classList.remove("show");
       document.body.classList.remove("no-scroll");
@@ -308,11 +255,11 @@ function renderChatList() {
 }
 
 function renderMessages() {
-  const active = ensureChat();
+  const active = getActiveChat();
   if (!chat) return;
 
   chat.innerHTML = "";
-  if (!active.messages.length) {
+  if (!active || !active.messages?.length) {
     chat.innerHTML = `<div class="chat-empty">Що хочеш дізнатись?</div>`;
     return;
   }
@@ -414,64 +361,77 @@ function fileToDataUrl(file) {
   });
 }
 
-async function syncAllChatsToCloud() {
-  if (!currentUser || !sb || !Array.isArray(state.chats) || !state.chats.length) return;
+async function historyApi(path, options = {}) {
+  if (!currentUser?.id) {
+    throw new Error("Спочатку увійди через Google");
+  }
 
-  const payload = state.chats.map((chatItem) => {
-    const normalized = normalizeChat(chatItem);
-    return {
-      id: normalized.id,
-      user_id: currentUser.id,
-      title: normalized.title,
-      messages: normalized.messages,
-      created_at: new Date(normalized.createdAt).toISOString(),
-      updated_at: new Date(normalized.updatedAt || Date.now()).toISOString()
-    };
+  const response = await fetch(`${HISTORY_API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Id": currentUser.id,
+      ...(options.headers || {})
+    }
   });
 
-  const { error } = await sb.from("chats").upsert(payload, {
-    onConflict: "id"
-  });
+  const data = await response.json().catch(() => ({}));
 
-  if (error) throw error;
+  if (!response.ok) {
+    throw new Error(data?.error || `History API error ${response.status}`);
+  }
+
+  return data;
 }
 
-async function loadAllChatsFromCloud() {
-  if (!currentUser || !sb || hasSyncedOnLoad) return;
+async function loadChatsFromWorker() {
+  if (!currentUser || hasLoadedChats) return;
 
   try {
-    const { data, error } = await sb
-      .from("chats")
-      .select("*")
-      .eq("user_id", currentUser.id)
-      .order("updated_at", { ascending: false });
-
-    if (error) throw error;
-
-    const cloudChats = (data || []).map((d) => ({
-      id: d.id,
-      title: d.title || "Новий чат",
-      messages: Array.isArray(d.messages) ? d.messages : [],
-      createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now(),
-      updatedAt: d.updated_at ? new Date(d.updated_at).getTime() : Date.now()
+    const data = await historyApi("/api/chats");
+    state.chats = (data.chats || []).map((chatItem) => ({
+      id: chatItem.id,
+      localId: chatItem.id,
+      title: chatItem.title || "Новий чат",
+      preview: chatItem.preview || "",
+      messages: [],
+      createdAt: chatItem.created_at ? new Date(chatItem.created_at).getTime() : Date.now(),
+      updatedAt: chatItem.updated_at ? new Date(chatItem.updated_at).getTime() : Date.now()
     }));
 
-    const mergedChats = mergeChats(state.chats, cloudChats);
-    state.chats = mergedChats;
-
-    if (!state.activeChatId || !state.chats.find((c) => c.id === state.activeChatId)) {
-      state.activeChatId = state.chats[0]?.id || null;
+    if (!state.activeChatId || !state.chats.find((c) => getChatKey(c) === state.activeChatId)) {
+      state.activeChatId = getChatKey(state.chats[0] || {}) || null;
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    saveState();
     renderAll();
 
-    await syncAllChatsToCloud();
+    const active = getActiveChat();
+    if (active?.id) {
+      await loadChatDetails(active.id);
+    }
 
-    hasSyncedOnLoad = true;
+    hasLoadedChats = true;
   } catch (e) {
-    console.error("Cloud sync load failed:", e);
+    console.error("Не вдалося завантажити чати:", e);
   }
+}
+
+async function loadChatDetails(chatId) {
+  const data = await historyApi(`/api/chats/${chatId}`);
+  const fullChat = data.chat;
+
+  const existing = state.chats.find((c) => c.id === chatId);
+  if (!existing) return;
+
+  existing.title = fullChat.title || existing.title;
+  existing.messages = Array.isArray(fullChat.messages) ? fullChat.messages : [];
+  existing.createdAt = fullChat.createdAt || existing.createdAt;
+  existing.updatedAt = fullChat.updatedAt || existing.updatedAt;
+
+  state.activeChatId = getChatKey(existing);
+  saveState();
+  renderAll();
 }
 
 window.retryMessage = function () {
@@ -486,7 +446,6 @@ window.retryMessage = function () {
 
   selectedImage = lastUserMsg.image || null;
   updateSelectedImageUI();
-  touchChat(active);
   sendChatMessage(lastUserMsg.content, true);
 };
 
@@ -562,7 +521,12 @@ async function sendChatMessage(text, isRetry = false) {
   text = (text || "").trim();
   if (!text && !selectedImage) return;
 
-  const active = ensureChat();
+  if (!currentUser) {
+    alert("Спочатку увійди через Google, щоб зберігати історію.");
+    return;
+  }
+
+  let active = getActiveChat() || ensureLocalChatStub();
   const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
   const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
 
@@ -575,29 +539,47 @@ async function sendChatMessage(text, isRetry = false) {
         content: "Ця модель не підтримує зображення. Обери Gemini Flash, Gemma 3 або Llama 3.2 Vision.",
         createdAt: Date.now()
       });
-      touchChat(active);
       saveState();
       renderAll();
       return;
     }
 
-    active.messages.push({
+    const localUserMessage = {
       id: uid(),
       role: "user",
       content: text,
       image: selectedImage,
       createdAt: Date.now()
+    };
+
+    active.messages.push(localUserMessage);
+
+    if (!active.title || active.title === "Новий чат") {
+      active.title = text ? text.slice(0, 40) : "Новий чат";
+    }
+
+    active.updatedAt = Date.now();
+    saveState();
+    renderAll();
+
+    const saved = await historyApi("/api/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        chatId: active.id || null,
+        content: text,
+        imageDataUrl: selectedImage?.dataUrl || null
+      })
     });
 
-    if (active.messages.length === 1) {
-      active.title = text ? text.slice(0, 30) : "Новий чат";
+    if (!active.id) {
+      active.id = saved.chat.id;
+      active.localId = saved.chat.id;
+      active.title = saved.chat.title || active.title;
+      state.activeChatId = active.id;
     }
 
-    if (active.messages.length > 50) {
-      active.messages = active.messages.slice(-50);
-    }
-
-    touchChat(active);
+    localUserMessage.id = saved.message.id;
+    active.updatedAt = saved.message.createdAt || Date.now();
 
     if (promptInput) {
       promptInput.value = "";
@@ -607,6 +589,7 @@ async function sendChatMessage(text, isRetry = false) {
     saveState();
   }
 
+  active = getActiveChat();
   const assistantMsg = {
     id: uid(),
     role: "assistant",
@@ -615,7 +598,7 @@ async function sendChatMessage(text, isRetry = false) {
   };
 
   active.messages.push(assistantMsg);
-  touchChat(active);
+  active.updatedAt = Date.now();
   saveState();
   renderAll();
   setBusy(true, "Думаю...");
@@ -663,7 +646,6 @@ async function sendChatMessage(text, isRetry = false) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
-
     const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content");
     const targetEl = msgEls[msgEls.length - 1];
 
@@ -690,7 +672,7 @@ async function sendChatMessage(text, isRetry = false) {
 
             if (typeof delta === "string") {
               assistantMsg.content += delta;
-              touchChat(active);
+              active.updatedAt = Date.now();
 
               if (targetEl) {
                 targetEl.innerHTML = renderMarkdown(assistantMsg.content);
@@ -702,26 +684,51 @@ async function sendChatMessage(text, isRetry = false) {
       }
     }
 
-    touchChat(active);
+    const savedAssistant = await historyApi("/api/messages/assistant", {
+      method: "POST",
+      body: JSON.stringify({
+        chatId: active.id,
+        messageId: assistantMsg.id,
+        content: assistantMsg.content
+      })
+    });
+
+    if (savedAssistant?.messageId) {
+      assistantMsg.id = savedAssistant.messageId;
+    }
+
+    active.updatedAt = Date.now();
     saveState();
     clearSelectedImage();
   } catch (e) {
     if (e?.name === "AbortError") {
-      touchChat(active);
+      active.updatedAt = Date.now();
       saveState();
       renderAll();
     } else {
       active.messages.pop();
-      active.messages.push({
+      const errorMsg = {
         id: uid(),
         role: "assistant",
         isError: true,
         content: e.message || "Невідома помилка",
         createdAt: Date.now()
-      });
-      touchChat(active);
+      };
+      active.messages.push(errorMsg);
+      active.updatedAt = Date.now();
       saveState();
       renderAll();
+
+      if (active.id) {
+        await historyApi("/api/messages/assistant", {
+          method: "POST",
+          body: JSON.stringify({
+            chatId: active.id,
+            messageId: errorMsg.id,
+            content: errorMsg.content
+          })
+        }).catch(() => {});
+      }
     }
   } finally {
     currentController = null;
@@ -766,20 +773,32 @@ stopBtn?.addEventListener("click", () => {
   currentController?.abort();
 });
 
-clearBtn?.addEventListener("click", () => {
-  const active = ensureChat();
+clearBtn?.addEventListener("click", async () => {
+  const active = getActiveChat();
+  if (!active) return;
   if (!confirm("Очистити поточний чат?")) return;
+
   active.messages = [];
   active.title = "Новий чат";
-  touchChat(active);
+  active.updatedAt = Date.now();
   saveState();
   renderAll();
 });
 
 newChatBtn?.addEventListener("click", () => {
-  state.activeChatId = null;
-  ensureChat();
+  const newLocalChat = {
+    id: null,
+    localId: uid(),
+    title: "Новий чат",
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  state.chats.unshift(newLocalChat);
+  state.activeChatId = newLocalChat.localId;
+  saveState();
   renderAll();
+
   sidebar?.classList.remove("open");
   mobileOverlay?.classList.remove("show");
   document.body.classList.remove("no-scroll");
@@ -818,10 +837,11 @@ removeImageBtn?.addEventListener("click", () => {
 
 sb?.auth.onAuthStateChange(async (_event, session) => {
   currentUser = session?.user || null;
-  hasSyncedOnLoad = false;
+  hasLoadedChats = false;
   renderAuthState();
+
   if (currentUser) {
-    await loadAllChatsFromCloud();
+    await loadChatsFromWorker();
   }
 });
 
@@ -829,8 +849,9 @@ sb?.auth.getSession()
   .then(async ({ data }) => {
     currentUser = data?.session?.user || null;
     renderAuthState();
+
     if (currentUser) {
-      await loadAllChatsFromCloud();
+      await loadChatsFromWorker();
     }
   })
   .catch(() => {});
@@ -847,17 +868,10 @@ googleLoginBtn?.addEventListener("click", async () => {
 
 logoutBtn?.addEventListener("click", async () => {
   if (!sb) return;
-  await syncAllChatsToCloud().catch(() => {});
   await sb.auth.signOut();
   currentUser = null;
-  hasSyncedOnLoad = false;
+  hasLoadedChats = false;
   renderAuthState();
-});
-
-window.addEventListener("beforeunload", () => {
-  if (currentUser && sb && state.chats?.length) {
-    syncAllChatsToCloud().catch(() => {});
-  }
 });
 
 applyTheme();
