@@ -16,6 +16,16 @@ function json(data, status = 200) {
   });
 }
 
+function text(body, status = 200) {
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      ...corsHeaders()
+    }
+  });
+}
+
 function uid() {
   return crypto.randomUUID();
 }
@@ -156,9 +166,7 @@ async function appendMessage(db, { chatId, role, content = "", imageDataUrl = nu
 
 async function upsertAssistantMessage(db, { userId, chatId, messageId, content, isError = false }) {
   const chat = await getChatById(db, userId, chatId);
-  if (!chat) {
-    throw new Error("Chat not found");
-  }
+  if (!chat) throw new Error("Chat not found");
 
   const existing = await db
     .prepare(`
@@ -210,21 +218,25 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const db = env.DB;
-    const userId = request.headers.get("X-User-Id");
 
     if (!db) {
       return json({ error: "D1 binding DB is missing" }, 500);
     }
 
+    if (request.method === "GET" && path === "/") {
+      return text("ai1 history api ok");
+    }
+
+    if (request.method === "GET" && path === "/api/health") {
+      return json({ ok: true, worker: "ai1", db: "connected" });
+    }
+
+    const userId = request.headers.get("X-User-Id");
     if (!userId) {
       return json({ error: "Missing X-User-Id" }, 401);
     }
 
     try {
-      if (request.method === "GET" && path === "/api/health") {
-        return json({ ok: true, worker: "ai1", db: "connected" });
-      }
-
       if (request.method === "GET" && path === "/api/chats") {
         const chats = await getChatsWithPreview(db, userId);
         return json({ chats });
