@@ -29,7 +29,7 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v6";
+const STORAGE_KEY = "ai-chat-worker-v7";
 
 const ALLOWED_MODELS = {
   auto: {
@@ -138,59 +138,28 @@ function renderMarkdown(text) {
   });
 }
 
-function uid() {
-  return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function getChatKey(chatItem) {
-  return chatItem?.id || chatItem?.localId || null;
-}
-
-function getActiveChat() {
-  return state.chats.find((c) => getChatKey(c) === state.activeChatId) || null;
-}
-
-function getActiveChatKey() {
-  const active = getActiveChat();
-  return active ? getChatKey(active) : "global";
-}
-
-function saveDraft(value) {
-  state.drafts[getActiveChatKey()] = value;
-  saveState();
-}
-
-function loadDraft() {
-  const draft = state.drafts[getActiveChatKey()] || "";
-  if (promptInput && document.activeElement !== promptInput) {
-    promptInput.value = draft;
-    autoResize();
-  }
-}
-
-function clearDraftForActiveChat() {
-  delete state.drafts[getActiveChatKey()];
-  saveState();
-  if (promptInput) {
-    promptInput.value = "";
-    autoResize();
-  }
 }
 
 function createLocalChat() {
   return {
     id: null,
-    localId: uid(),
+    localId: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     title: "Новий чат",
     preview: "",
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
+}
+
+function getChatKey(chatItem) {
+  return chatItem?.id ? String(chatItem.id) : chatItem?.localId || null;
+}
+
+function getActiveChat() {
+  return state.chats.find((c) => getChatKey(c) === state.activeChatId) || null;
 }
 
 function ensureLocalChatStub() {
@@ -204,10 +173,32 @@ function ensureLocalChatStub() {
   return active;
 }
 
-function applyTheme() {
-  document.documentElement.setAttribute("data-theme", state.theme);
-  if (themeToggleBtn) {
-    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
+function getActiveChatDraftKey() {
+  const active = getActiveChat();
+  return active ? getChatKey(active) : "global";
+}
+
+function saveDraft(value) {
+  state.drafts[getActiveChatDraftKey()] = value;
+  saveState();
+}
+
+function loadDraft() {
+  const key = getActiveChatDraftKey();
+  const value = state.drafts[key] || "";
+  if (promptInput && document.activeElement !== promptInput) {
+    promptInput.value = value;
+    autoResize();
+  }
+}
+
+function clearDraft() {
+  const key = getActiveChatDraftKey();
+  delete state.drafts[key];
+  saveState();
+  if (promptInput) {
+    promptInput.value = "";
+    autoResize();
   }
 }
 
@@ -217,17 +208,22 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function renderAuthState() {
-  if (!authLoggedOut || !authLoggedIn) return;
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
+  }
+}
 
+function renderAuthState() {
   if (!currentUser) {
-    authLoggedOut.classList.remove("hidden");
-    authLoggedIn.classList.add("hidden");
+    authLoggedOut?.classList.remove("hidden");
+    authLoggedIn?.classList.add("hidden");
     return;
   }
 
-  authLoggedOut.classList.add("hidden");
-  authLoggedIn.classList.remove("hidden");
+  authLoggedOut?.classList.add("hidden");
+  authLoggedIn?.classList.remove("hidden");
 
   const meta = currentUser.user_metadata || {};
   if (userName) userName.textContent = meta.full_name || meta.name || currentUser.email || "User";
@@ -236,6 +232,7 @@ function renderAuthState() {
 }
 
 function renderChatList() {
+  if (!chatList) return;
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
@@ -264,6 +261,7 @@ function renderChatList() {
       }
 
       state.chats = state.chats.filter((c) => getChatKey(c) !== getChatKey(item));
+
       if (!state.chats.length) {
         const newChat = createLocalChat();
         state.chats = [newChat];
@@ -271,12 +269,14 @@ function renderChatList() {
       } else {
         state.activeChatId = getChatKey(state.chats[0]);
       }
+
       saveState();
       renderAll();
     };
 
     div.onclick = async () => {
       if (requestInFlight) return;
+
       state.activeChatId = getChatKey(item);
       saveState();
 
@@ -294,6 +294,8 @@ function renderChatList() {
 }
 
 function renderMessages() {
+  if (!chat) return;
+
   chat.innerHTML = `<div class="chat-inner"></div>`;
   const inner = chat.querySelector(".chat-inner");
   const active = getActiveChat();
@@ -328,14 +330,6 @@ function renderMessages() {
       content.appendChild(text);
     }
 
-    if (msg.image?.dataUrl) {
-      const img = document.createElement("img");
-      img.src = msg.image.dataUrl;
-      img.alt = "uploaded image";
-      img.className = "inline-preview-image";
-      content.appendChild(img);
-    }
-
     wrapper.appendChild(content);
     inner.appendChild(wrapper);
   }
@@ -367,15 +361,15 @@ function autoResize() {
 
 function updateSelectedImageUI() {
   if (!selectedImage) {
-    selectedImageBar.classList.add("hidden");
-    selectedImagePreview.removeAttribute("src");
-    selectedImageName.textContent = "";
+    selectedImageBar?.classList.add("hidden");
+    selectedImagePreview?.removeAttribute("src");
+    if (selectedImageName) selectedImageName.textContent = "";
     return;
   }
 
-  selectedImageBar.classList.remove("hidden");
-  selectedImagePreview.src = selectedImage.dataUrl;
-  selectedImageName.textContent = selectedImage.name || "image";
+  selectedImageBar?.classList.remove("hidden");
+  if (selectedImagePreview) selectedImagePreview.src = selectedImage.dataUrl;
+  if (selectedImageName) selectedImageName.textContent = selectedImage.name || "image";
 }
 
 function clearSelectedImage() {
@@ -424,6 +418,9 @@ async function historyApi(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       "X-User-Id": currentUser.id,
+      "X-User-Email": currentUser.email || "",
+      "X-User-Name": currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "",
+      "X-User-Avatar": currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || "",
       ...(options.headers || {})
     }
   });
@@ -441,9 +438,10 @@ async function loadChatsFromWorker() {
 
   try {
     const data = await historyApi("/api/chats");
+
     const serverChats = (data.chats || []).map((chatItem) => ({
-      id: chatItem.id,
-      localId: chatItem.id,
+      id: String(chatItem.id),
+      localId: String(chatItem.id),
       title: chatItem.title || "Новий чат",
       preview: chatItem.preview || "",
       messages: [],
@@ -480,11 +478,11 @@ async function loadChatDetails(chatId) {
   const data = await historyApi(`/api/chats/${chatId}`);
   const fullChat = data.chat;
 
-  let existing = state.chats.find((c) => c.id === chatId);
+  let existing = state.chats.find((c) => String(c.id) === String(chatId));
   if (!existing) {
     existing = {
-      id: chatId,
-      localId: chatId,
+      id: String(chatId),
+      localId: String(chatId),
       title: fullChat.title || "Новий чат",
       preview: "",
       messages: [],
@@ -494,15 +492,15 @@ async function loadChatDetails(chatId) {
     state.chats.unshift(existing);
   }
 
-  existing.id = chatId;
-  existing.localId = chatId;
+  existing.id = String(chatId);
+  existing.localId = String(chatId);
   existing.title = fullChat.title || existing.title;
   existing.messages = Array.isArray(fullChat.messages) ? fullChat.messages : [];
   existing.preview = existing.messages.find((m) => m.role === "user")?.content || "";
   existing.createdAt = fullChat.createdAt || existing.createdAt;
   existing.updatedAt = fullChat.updatedAt || existing.updatedAt;
 
-  state.activeChatId = chatId;
+  state.activeChatId = String(chatId);
   saveState();
   renderAll();
 }
@@ -517,8 +515,6 @@ window.retryMessage = function () {
   const lastUserMsg = [...active.messages].reverse().find((m) => m.role === "user");
   if (!lastUserMsg) return;
 
-  selectedImage = lastUserMsg.image || null;
-  updateSelectedImageUI();
   sendChatMessage(lastUserMsg.content, true);
 };
 
@@ -527,26 +523,14 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
 
   const recent = active.messages
     .slice(-12)
-    .filter((m) => m.id !== assistantMsgId && !m.isError);
+    .filter((m) => String(m.id) !== String(assistantMsgId) && !m.isError);
 
   for (const m of recent) {
     if (m.role === "user") {
-      const text = (m.content || "").trim();
-
-      if (m.image?.dataUrl) {
-        rawMessages.push({
-          role: "user",
-          content: [
-            { type: "text", text },
-            { type: "image_url", image_url: { url: m.image.dataUrl } }
-          ]
-        });
-      } else {
-        rawMessages.push({
-          role: "user",
-          content: text
-        });
-      }
+      rawMessages.push({
+        role: "user",
+        content: (m.content || "").trim()
+      });
     } else if (m.role === "assistant") {
       rawMessages.push({
         role: "assistant",
@@ -571,15 +555,7 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
 
     const prev = normalized[normalized.length - 1];
     if (prev.role === msg.role) {
-      if (typeof prev.content === "string" && typeof msg.content === "string") {
-        prev.content += `\n${msg.content.trim()}`;
-      } else if (Array.isArray(prev.content) && Array.isArray(msg.content)) {
-        prev.content = [...prev.content, ...msg.content];
-      } else if (typeof prev.content === "string" && Array.isArray(msg.content)) {
-        prev.content = [{ type: "text", text: prev.content }, ...msg.content];
-      } else if (Array.isArray(prev.content) && typeof msg.content === "string") {
-        prev.content = [...prev.content, { type: "text", text: msg.content }];
-      }
+      prev.content += `\n${msg.content.trim()}`;
     } else {
       normalized.push(msg);
     }
@@ -595,15 +571,17 @@ async function ensureServerChatForActive(firstMessageText = "Новий чат")
   const created = await historyApi("/api/chats", {
     method: "POST",
     body: JSON.stringify({
-      title: (firstMessageText || "Новий чат").slice(0, 48)
+      title: (firstMessageText || "Новий чат").slice(0, 48),
+      model: modelSelect?.value || "auto"
     })
   });
 
-  active.id = created.chat.id;
-  active.localId = created.chat.id;
+  active.id = String(created.chat.id);
+  active.localId = String(created.chat.id);
   active.title = created.chat.title || active.title;
-  state.activeChatId = active.id;
+  state.activeChatId = String(created.chat.id);
   saveState();
+
   return active;
 }
 
@@ -611,7 +589,7 @@ async function sendChatMessage(text, isRetry = false) {
   if (requestInFlight) return;
 
   text = (text || "").trim();
-  if (!text && !selectedImage) return;
+  if (!text) return;
 
   if (!currentUser) {
     alert("Спочатку увійди через Google, щоб зберігати історію.");
@@ -622,41 +600,26 @@ async function sendChatMessage(text, isRetry = false) {
   const modelId = modelSelect?.value || "auto";
   const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS.auto;
 
-  if (!isRetry && selectedImage && !modelConf.vision) {
-    active.messages.push({
-      id: uid(),
-      role: "assistant",
-      isError: true,
-      content: "Ця модель не підтримує зображення. Обери Auto або vision-модель.",
-      createdAt: Date.now()
-    });
-    saveState();
-    renderAll();
-    return;
-  }
-
   setBusy(true, "Думаю...");
 
   try {
     active = await ensureServerChatForActive(text);
 
-    let localUserMessage;
     if (!isRetry) {
-      localUserMessage = {
-        id: uid(),
+      const localUserMessage = {
+        id: `tmp_user_${Date.now()}`,
         role: "user",
         content: text,
-        image: selectedImage,
         createdAt: Date.now()
       };
 
       active.messages.push(localUserMessage);
 
       if (!active.title || active.title === "Новий чат") {
-        active.title = text ? text.slice(0, 48) : "Новий чат";
+        active.title = text.slice(0, 48);
       }
 
-      active.preview = text || active.preview || "";
+      active.preview = text;
       active.updatedAt = Date.now();
       saveState();
       renderAll();
@@ -664,24 +627,20 @@ async function sendChatMessage(text, isRetry = false) {
       const saved = await historyApi("/api/messages", {
         method: "POST",
         body: JSON.stringify({
-          chatId: active.id,
-          content: text,
-          imageDataUrl: selectedImage?.dataUrl || null
+          chatId: Number(active.id),
+          content: text
         })
       });
 
-      localUserMessage.id = saved.message.id;
-      active.id = saved.chat.id;
-      active.localId = saved.chat.id;
+      localUserMessage.id = String(saved.message.id);
       active.title = saved.chat.title || active.title;
       active.updatedAt = saved.message.createdAt || Date.now();
-      state.activeChatId = active.id;
       saveState();
-      clearDraftForActiveChat();
+      clearDraft();
     }
 
     const assistantMsg = {
-      id: uid(),
+      id: `tmp_assistant_${Date.now()}`,
       role: "assistant",
       content: "",
       createdAt: Date.now()
@@ -715,6 +674,7 @@ async function sendChatMessage(text, isRetry = false) {
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       let message = `HTTP ${response.status}`;
+
       try {
         const parsed = JSON.parse(raw);
         if (parsed?.details) {
@@ -729,6 +689,7 @@ async function sendChatMessage(text, isRetry = false) {
       } catch {
         if (raw) message = raw;
       }
+
       throw new Error(message);
     }
 
@@ -752,6 +713,7 @@ async function sendChatMessage(text, isRetry = false) {
         const lines = part.split("\n");
         for (const line of lines) {
           if (!line.startsWith("data:")) continue;
+
           const dataStr = line.slice(5).trim();
           if (!dataStr || dataStr === "[DONE]") continue;
 
@@ -774,15 +736,15 @@ async function sendChatMessage(text, isRetry = false) {
     const savedAssistant = await historyApi("/api/messages/assistant", {
       method: "POST",
       body: JSON.stringify({
-        chatId: active.id,
-        messageId: assistantMsg.id,
+        chatId: Number(active.id),
         content: assistantMsg.content,
-        isError: false
+        provider: null,
+        model: modelId
       })
     });
 
     if (savedAssistant?.messageId) {
-      assistantMsg.id = savedAssistant.messageId;
+      assistantMsg.id = String(savedAssistant.messageId);
     }
 
     active.updatedAt = Date.now();
@@ -791,9 +753,8 @@ async function sendChatMessage(text, isRetry = false) {
     await loadChatDetails(active.id);
   } catch (e) {
     const activeNow = getActiveChat();
-    if (e?.name === "AbortError") {
-      saveState();
-    } else {
+
+    if (e?.name !== "AbortError") {
       if (activeNow?.messages?.length) {
         const last = activeNow.messages[activeNow.messages.length - 1];
         if (last?.role === "assistant" && !last.content) {
@@ -802,7 +763,7 @@ async function sendChatMessage(text, isRetry = false) {
       }
 
       const errorMsg = {
-        id: uid(),
+        id: `tmp_error_${Date.now()}`,
         role: "assistant",
         isError: true,
         content: e.message || "Невідома помилка",
@@ -818,10 +779,10 @@ async function sendChatMessage(text, isRetry = false) {
         await historyApi("/api/messages/assistant", {
           method: "POST",
           body: JSON.stringify({
-            chatId: activeNow.id,
-            messageId: errorMsg.id,
+            chatId: Number(activeNow.id),
             content: errorMsg.content,
-            isError: true
+            provider: "error",
+            model: modelId
           })
         }).catch(() => {});
       }
@@ -844,7 +805,7 @@ mobileOverlay?.addEventListener("click", closeSidebar);
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = promptInput?.value.trim() || "";
-  if (text || selectedImage) sendChatMessage(text);
+  if (text) sendChatMessage(text);
 });
 
 promptInput?.addEventListener("input", () => {
@@ -874,7 +835,7 @@ clearBtn?.addEventListener("click", async () => {
 
   const newLocalChat = createLocalChat();
   state.chats = [newLocalChat, ...state.chats.filter((c) => getChatKey(c) !== getChatKey(active))];
-  state.activeChatId = newLocalChat.localId;
+  state.activeChatId = getChatKey(newLocalChat);
   saveState();
   renderAll();
 });
@@ -882,14 +843,14 @@ clearBtn?.addEventListener("click", async () => {
 newChatBtn?.addEventListener("click", () => {
   const newLocalChat = createLocalChat();
   state.chats.unshift(newLocalChat);
-  state.activeChatId = newLocalChat.localId;
+  state.activeChatId = getChatKey(newLocalChat);
   saveState();
   renderAll();
   closeSidebar();
 });
 
 imageBtn?.addEventListener("click", () => {
-  imageInput?.click();
+  alert("Збереження картинок у поточній D1 схемі ще не підключене.");
 });
 
 imageInput?.addEventListener("change", async () => {
@@ -957,9 +918,9 @@ sb?.auth.getSession()
     if (currentUser) {
       await loadChatsFromWorker();
     } else if (!state.chats.length) {
-      const chat = createLocalChat();
-      state.chats = [chat];
-      state.activeChatId = getChatKey(chat);
+      const chatItem = createLocalChat();
+      state.chats = [chatItem];
+      state.activeChatId = getChatKey(chatItem);
       saveState();
     }
   })
@@ -968,9 +929,9 @@ sb?.auth.getSession()
 applyTheme();
 
 if (!state.chats.length) {
-  const chat = createLocalChat();
-  state.chats = [chat];
-  state.activeChatId = getChatKey(chat);
+  const chatItem = createLocalChat();
+  state.chats = [chatItem];
+  state.activeChatId = getChatKey(chatItem);
   saveState();
 }
 
