@@ -29,9 +29,19 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v3";
+const STORAGE_KEY = "ai-chat-worker-v4";
 
 const ALLOWED_MODELS = {
+  auto: {
+    system: "Ти корисний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: true
+  },
+  "github/gpt-4o-mini": {
+    system: "Ти корисний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
   "groq/llama-3.3-70b-versatile": {
     system: "Ти швидкий і точний AI-помічник. Відповідай українською.",
     tokens: 4096,
@@ -42,13 +52,18 @@ const ALLOWED_MODELS = {
     tokens: 4096,
     vision: true
   },
-  "meta/llama-3.3-70b-instruct": {
+  "mistral/codestral": {
+    system: "Ти сильний AI-помічник для коду і технічних задач. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "mistral/mistral-large": {
     system: "Ти потужний AI-помічник. Відповідай українською.",
     tokens: 4096,
     vision: false
   },
-  "qwen/qwen3.5-122b-a10b": {
-    system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.",
+  "meta/llama-3.3-70b-instruct": {
+    system: "Ти потужний AI-помічник. Відповідай українською.",
     tokens: 4096,
     vision: false
   },
@@ -61,6 +76,16 @@ const ALLOWED_MODELS = {
     system: "Ти AI-помічник для аналізу зображень. Відповідай українською.",
     tokens: 2048,
     vision: true
+  },
+  "cerebras/llama-3.1-70b": {
+    system: "Ти швидкий AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "github/phi-4": {
+    system: "Ти розумний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
   }
 };
 
@@ -91,12 +116,6 @@ renderer.code = function (code, language) {
   const highlighted = hljs.highlight(code, { language: validLang }).value;
   return `
     <div class="code-block">
-      <div class="code-header">
-        <span>${validLang}</span>
-        <div style="display:flex;gap:12px;">
-          <button class="copy-btn" onclick="copyCodeBtn(this)">Copy</button>
-        </div>
-      </div>
       <pre><code class="hljs ${validLang}">${highlighted}</code></pre>
     </div>
   `;
@@ -107,16 +126,6 @@ marked.setOptions({
   breaks: true,
   gfm: true
 });
-
-window.copyCodeBtn = function (btn) {
-  const pre = btn.parentElement.parentElement.nextElementSibling;
-  navigator.clipboard.writeText(pre.innerText).then(() => {
-    btn.innerHTML = "Copied";
-    setTimeout(() => {
-      btn.innerHTML = "Copy";
-    }, 2000);
-  });
-};
 
 function formatThinking(text) {
   if (!text) return "";
@@ -205,8 +214,8 @@ function renderChatList() {
     div.className = `chat-item ${isActive ? "active" : ""}`;
     div.innerHTML = `
       <div class="chat-item-main">
-        <div class="chat-item-title">${item.title || "Новий чат"}</div>
-        <div class="chat-item-subtitle">${String(subtitle).slice(0, 90)}</div>
+        <div class="chat-item-title">${escapeHtml(item.title || "Новий чат")}</div>
+        <div class="chat-item-subtitle">${escapeHtml(String(subtitle).slice(0, 90))}</div>
       </div>
       <button class="chat-item-delete" title="Видалити">✕</button>
     `;
@@ -237,9 +246,7 @@ function renderChatList() {
         renderAll();
       }
 
-      sidebar?.classList.remove("open");
-      mobileOverlay?.classList.remove("show");
-      document.body.classList.remove("no-scroll");
+      closeSidebar();
     };
 
     chatList.appendChild(div);
@@ -247,12 +254,14 @@ function renderChatList() {
 }
 
 function renderMessages() {
-  const active = getActiveChat();
   if (!chat) return;
+  const active = getActiveChat();
 
-  chat.innerHTML = "";
+  chat.innerHTML = `<div class="chat-inner"></div>`;
+  const inner = chat.querySelector(".chat-inner");
+
   if (!active || !active.messages?.length) {
-    chat.innerHTML = `<div class="chat-empty">Що хочеш дізнатись?</div>`;
+    inner.innerHTML = `<div class="chat-empty">Що хочеш дізнатись?</div>`;
     return;
   }
 
@@ -260,34 +269,37 @@ function renderMessages() {
     const wrapper = document.createElement("div");
     wrapper.className = `message-wrapper ${msg.role}`;
 
-    const inner = document.createElement("div");
-    inner.className = "message-content";
+    const innerMsg = document.createElement("div");
+    innerMsg.className = "message-content";
 
     if (msg.isError) {
-      inner.innerHTML = `
+      innerMsg.innerHTML = `
         <div class="error-card">
           <strong>Помилка</strong><br>
-          ${msg.content}
+          ${escapeHtml(msg.content || "Невідома помилка")}
           <div class="error-actions">
             <button class="secondary-btn" onclick="retryMessage()">Спробувати ще раз</button>
           </div>
         </div>
       `;
     } else if (msg.role === "assistant") {
-      inner.innerHTML = renderMarkdown(msg.content || "");
+      innerMsg.innerHTML = renderMarkdown(msg.content || "");
     } else {
-      inner.textContent = msg.content || "";
+      const p = document.createElement("div");
+      p.textContent = msg.content || "";
+      innerMsg.appendChild(p);
     }
 
     if (msg.image?.dataUrl) {
       const img = document.createElement("img");
       img.src = msg.image.dataUrl;
       img.className = "inline-preview-image";
-      inner.appendChild(img);
+      img.alt = "uploaded image";
+      innerMsg.appendChild(img);
     }
 
-    wrapper.appendChild(inner);
-    chat.appendChild(wrapper);
+    wrapper.appendChild(innerMsg);
+    inner.appendChild(wrapper);
   }
 
   chat.scrollTop = chat.scrollHeight;
@@ -298,21 +310,19 @@ function renderAll() {
   renderChatList();
   renderMessages();
 
-  if (stopBtn && sendBtn) {
-    if (requestInFlight) {
-      stopBtn.classList.remove("hidden");
-      sendBtn.classList.add("hidden");
-    } else {
-      stopBtn.classList.add("hidden");
-      sendBtn.classList.remove("hidden");
-    }
+  if (requestInFlight) {
+    stopBtn?.classList.remove("hidden");
+    sendBtn?.classList.add("hidden");
+  } else {
+    stopBtn?.classList.add("hidden");
+    sendBtn?.classList.remove("hidden");
   }
 }
 
 function autoResize() {
   if (!promptInput) return;
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + "px";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 180) + "px";
 }
 
 function updateSelectedImageUI() {
@@ -325,8 +335,8 @@ function updateSelectedImageUI() {
   }
 
   selectedImageBar.classList.remove("hidden");
-  if (selectedImageName) selectedImageName.textContent = selectedImage.name;
   selectedImagePreview.src = selectedImage.dataUrl;
+  selectedImageName.textContent = selectedImage.name || "image";
 }
 
 function clearSelectedImage() {
@@ -344,6 +354,18 @@ function setBusy(isBusy, text = "") {
   renderAll();
 }
 
+function closeSidebar() {
+  sidebar?.classList.remove("open");
+  mobileOverlay?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+}
+
+function openSidebar() {
+  sidebar?.classList.add("open");
+  mobileOverlay?.classList.add("show");
+  document.body.classList.add("no-scroll");
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -351,6 +373,12 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
     reader.readAsDataURL(file);
   });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text ?? "";
+  return div.innerHTML;
 }
 
 async function historyApi(path, options = {}) {
@@ -452,7 +480,7 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
     if (m.role === "user") {
       const text = (m.content || "").trim();
 
-      if (m.image?.dataUrl && modelConf.vision) {
+      if (m.image?.dataUrl) {
         rawMessages.push({
           role: "user",
           content: [
@@ -519,8 +547,8 @@ async function sendChatMessage(text, isRetry = false) {
   }
 
   let active = getActiveChat() || ensureLocalChatStub();
-  const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
+  const modelId = modelSelect?.value || "auto";
+  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS.auto;
 
   if (!isRetry) {
     if (selectedImage && !modelConf.vision) {
@@ -528,7 +556,7 @@ async function sendChatMessage(text, isRetry = false) {
         id: uid(),
         role: "assistant",
         isError: true,
-        content: "Ця модель не підтримує зображення. Обери Gemini Flash, Gemma 3 або Llama 3.2 Vision.",
+        content: "Ця модель не підтримує зображення. Обери Auto або vision-модель.",
         createdAt: Date.now()
       });
       saveState();
@@ -547,7 +575,7 @@ async function sendChatMessage(text, isRetry = false) {
     active.messages.push(localUserMessage);
 
     if (!active.title || active.title === "Новий чат") {
-      active.title = text ? text.slice(0, 40) : "Новий чат";
+      active.title = text ? text.slice(0, 48) : "Новий чат";
     }
 
     active.updatedAt = Date.now();
@@ -622,7 +650,7 @@ async function sendChatMessage(text, isRetry = false) {
 
       try {
         const parsed = JSON.parse(raw);
-        if (parsed?.details) message = parsed.details;
+        if (parsed?.details) message = typeof parsed.details === "string" ? parsed.details : JSON.stringify(parsed.details);
         else if (parsed?.error?.message) message = parsed.error.message;
         else if (parsed?.error) message = typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error);
         else if (raw) message = raw;
@@ -638,8 +666,6 @@ async function sendChatMessage(text, isRetry = false) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
-    const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content");
-    const targetEl = msgEls[msgEls.length - 1];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -647,7 +673,7 @@ async function sendChatMessage(text, isRetry = false) {
 
       buffer += decoder.decode(value, { stream: true });
       const parts = buffer.split("\n\n");
-      buffer = parts.pop();
+      buffer = parts.pop() || "";
 
       for (const part of parts) {
         const lines = part.split("\n");
@@ -665,11 +691,7 @@ async function sendChatMessage(text, isRetry = false) {
             if (typeof delta === "string") {
               assistantMsg.content += delta;
               active.updatedAt = Date.now();
-
-              if (targetEl) {
-                targetEl.innerHTML = renderMarkdown(assistantMsg.content);
-                chat.scrollTop = chat.scrollHeight;
-              }
+              renderMessages();
             }
           } catch {}
         }
@@ -693,6 +715,7 @@ async function sendChatMessage(text, isRetry = false) {
     active.updatedAt = Date.now();
     saveState();
     clearSelectedImage();
+    renderAll();
   } catch (e) {
     if (e?.name === "AbortError") {
       active.updatedAt = Date.now();
@@ -736,17 +759,8 @@ themeToggleBtn?.addEventListener("click", () => {
   applyTheme();
 });
 
-hamburgerBtn?.addEventListener("click", () => {
-  sidebar?.classList.add("open");
-  mobileOverlay?.classList.add("show");
-  document.body.classList.add("no-scroll");
-});
-
-mobileOverlay?.addEventListener("click", () => {
-  sidebar?.classList.remove("open");
-  mobileOverlay?.classList.remove("show");
-  document.body.classList.remove("no-scroll");
-});
+hamburgerBtn?.addEventListener("click", openSidebar);
+mobileOverlay?.addEventListener("click", closeSidebar);
 
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -804,10 +818,7 @@ newChatBtn?.addEventListener("click", () => {
   state.activeChatId = newLocalChat.localId;
   saveState();
   renderAll();
-
-  sidebar?.classList.remove("open");
-  mobileOverlay?.classList.remove("show");
-  document.body.classList.remove("no-scroll");
+  closeSidebar();
 });
 
 imageBtn?.addEventListener("click", () => {
@@ -837,9 +848,7 @@ imageInput?.addEventListener("change", async () => {
   }
 });
 
-removeImageBtn?.addEventListener("click", () => {
-  clearSelectedImage();
-});
+removeImageBtn?.addEventListener("click", clearSelectedImage);
 
 googleLoginBtn?.addEventListener("click", async () => {
   if (!sb) return;
