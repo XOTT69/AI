@@ -1,12 +1,16 @@
 {
-  "name": "ai1",
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai1-history",
   "main": "src/worker.js",
   "compatibility_date": "2026-05-17",
+  "observability": {
+    "enabled": true
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "ai1-db",
-      "database_id": "YOUR_D1_DATABASE_ID"
+      "database_id": "PASTE_YOUR_D1_DATABASE_ID_HERE"
     }
   ]
 }
