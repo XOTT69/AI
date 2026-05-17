@@ -1,618 +1,1020 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="uk" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Chat</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>AI Chat v2</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
 
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/common.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/common.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    :root, [data-theme="light"] {
-      --bg: #f7f6f2;
-      --surface: #fbfbf9;
-      --surface-2: #f1efe9;
-      --surface-3: #e9e5dc;
-      --text: #1f1d18;
-      --muted: #706d66;
-      --border: rgba(31, 29, 24, 0.12);
-      --primary: #0b6b72;
-      --primary-hover: #09575d;
-      --danger: #b42318;
-      --danger-bg: rgba(180, 35, 24, 0.08);
-      --shadow: 0 10px 30px rgba(0,0,0,0.08);
-      --radius: 18px;
-      --radius-sm: 12px;
+    :root {
+      --font-body: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-display: "Inter", system-ui, sans-serif;
+
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.375rem);
+      --text-xl: clamp(1.35rem, 1.15rem + 0.9vw, 1.9rem);
+
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-5: 1.25rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --space-10: 2.5rem;
+      --space-12: 3rem;
+      --radius-sm: 0.5rem;
+      --radius-md: 0.75rem;
+      --radius-lg: 1rem;
+      --radius-xl: 1.25rem;
+      --radius-full: 9999px;
+      --transition-interactive: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+
+      --color-bg: #171614;
+      --color-surface: #1c1b19;
+      --color-surface-2: #201f1d;
+      --color-surface-offset: #23211f;
+      --color-surface-dynamic: #2c2a28;
+      --color-border: #393836;
+      --color-divider: #2a2927;
+      --color-text: #ece9e3;
+      --color-text-muted: #a6a39d;
+      --color-text-faint: #76726d;
+      --color-text-inverse: #141311;
+      --color-primary: #58a6b2;
+      --color-primary-hover: #6db6c1;
+      --color-primary-active: #3d8691;
+      --color-primary-highlight: #27393c;
+      --color-success: #66a147;
+      --color-error: #c75e97;
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.22);
+      --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.28);
+
+      --app-height: 100dvh;
+      --sidebar-width: 312px;
+      --composer-max: 980px;
     }
 
-    [data-theme="dark"] {
-      --bg: #111111;
-      --surface: #171717;
-      --surface-2: #1d1d1d;
-      --surface-3: #252525;
-      --text: #f5f5f0;
-      --muted: #a1a19a;
-      --border: rgba(255,255,255,0.10);
-      --primary: #47aab1;
-      --primary-hover: #67bcc2;
-      --danger: #f97066;
-      --danger-bg: rgba(249, 112, 102, 0.12);
-      --shadow: 0 12px 40px rgba(0,0,0,0.35);
-      --radius: 18px;
-      --radius-sm: 12px;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: var(--font-body);
     }
 
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
-    body.no-scroll { overflow: hidden; }
+    body {
+      min-height: var(--app-height);
+      font-size: var(--text-base);
+      line-height: 1.55;
+    }
 
-    button, input, select, textarea { font: inherit; }
-    img { max-width: 100%; display: block; }
+    button, input, textarea, select {
+      font: inherit;
+      color: inherit;
+      border: 0;
+      outline: 0;
+      background: none;
+    }
 
-    .app {
-      min-height: 100vh;
+    button {
+      cursor: pointer;
+      transition:
+        background var(--transition-interactive),
+        color var(--transition-interactive),
+        border-color var(--transition-interactive),
+        opacity var(--transition-interactive),
+        transform var(--transition-interactive),
+        box-shadow var(--transition-interactive);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img, svg {
+      display: block;
+      max-width: 100%;
+    }
+
+    .hidden { display: none !important; }
+    .no-scroll { overflow: hidden; }
+
+    .app-shell {
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      height: 100dvh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top right, rgba(88, 166, 178, 0.08), transparent 28%),
+        var(--color-bg);
     }
 
     .sidebar {
-      border-right: 1px solid var(--border);
-      background: var(--surface);
-      padding: 20px;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      background: rgba(22, 21, 19, 0.92);
+      backdrop-filter: blur(16px);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      position: sticky;
-      top: 0;
-      height: 100vh;
+      min-width: 0;
+      overflow: hidden;
+      z-index: 40;
+    }
+
+    .sidebar-top {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      justify-content: space-between;
+      padding: max(env(safe-area-inset-top), 14px) var(--space-4) var(--space-4);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, rgba(88,166,178,0.18), rgba(88,166,178,0.06));
+      border: 1px solid rgba(88,166,178,0.22);
+      color: var(--color-primary);
+      flex: 0 0 auto;
+    }
+
+    .brand-text {
+      min-width: 0;
     }
 
     .brand-title {
-      font-size: 20px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
+      font-size: var(--text-sm);
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .brand-subtitle {
+      color: var(--color-text-muted);
+      font-size: var(--text-xs);
+      margin-top: 2px;
     }
 
     .icon-btn {
-      border: 1px solid var(--border);
-      background: var(--surface-2);
-      color: var(--text);
-      border-radius: 12px;
-      min-width: 42px;
+      width: 42px;
       height: 42px;
-      cursor: pointer;
+      min-width: 42px;
+      border-radius: 12px;
+      display: inline-grid;
+      place-items: center;
+      color: var(--color-text-muted);
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
     }
 
-    .primary-btn, .secondary-btn {
-      border: 0;
-      border-radius: 14px;
+    .icon-btn:hover {
+      color: var(--color-text);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .sidebar-actions {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .primary-btn,
+    .secondary-btn,
+    .ghost-btn {
       min-height: 46px;
-      padding: 0 16px;
-      cursor: pointer;
+      padding: 0 var(--space-4);
+      border-radius: 14px;
+      font-size: var(--text-sm);
       font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
     }
 
     .primary-btn {
-      background: var(--primary);
-      color: white;
+      background: var(--color-primary);
+      color: #0f1617;
+      box-shadow: 0 8px 24px rgba(88,166,178,0.18);
     }
 
-    .primary-btn:hover { background: var(--primary-hover); }
+    .primary-btn:hover { background: var(--color-primary-hover); }
+    .primary-btn:active { background: var(--color-primary-active); transform: translateY(1px); }
 
     .secondary-btn {
-      background: var(--surface-2);
-      color: var(--text);
-      border: 1px solid var(--border);
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--color-text);
     }
 
-    .auth-card {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
+    .secondary-btn:hover {
+      background: rgba(255,255,255,0.07);
     }
 
-    .hidden { display: none !important; }
-
-    .user-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .ghost-btn {
+      background: transparent;
+      color: var(--color-text-muted);
+      border: 1px dashed rgba(255,255,255,0.08);
     }
 
-    .user-row img {
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 1px solid var(--border);
+    .ghost-btn:hover {
+      color: var(--color-text);
+      background: rgba(255,255,255,0.04);
     }
 
-    .user-meta {
-      min-width: 0;
-      flex: 1;
-    }
-
-    .user-name {
-      font-weight: 700;
-      font-size: 14px;
-    }
-
-    .user-email {
-      color: var(--muted);
-      font-size: 12px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .sidebar-section-title {
+      padding: 0 var(--space-4) var(--space-2);
+      color: var(--color-text-faint);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .chat-list {
-      overflow: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      min-height: 0;
-      padding-right: 4px;
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 var(--space-3) var(--space-4);
     }
 
     .chat-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
+      width: 100%;
       border-radius: 16px;
       padding: 12px;
-      cursor: pointer;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+    }
+
+    .chat-item:hover {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.05);
     }
 
     .chat-item.active {
-      border-color: rgba(71,170,177,0.5);
-      background: color-mix(in srgb, var(--primary) 10%, var(--surface-2));
+      background: rgba(88,166,178,0.09);
+      border-color: rgba(88,166,178,0.22);
     }
 
     .chat-item-main {
       min-width: 0;
       flex: 1;
+      text-align: left;
     }
 
     .chat-item-title {
-      font-weight: 700;
-      font-size: 14px;
+      font-size: var(--text-sm);
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .chat-item-subtitle {
-      color: var(--muted);
-      font-size: 12px;
       margin-top: 4px;
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
       display: -webkit-box;
-      -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
       overflow: hidden;
+      line-height: 1.35;
     }
 
     .chat-item-delete {
-      border: 0;
-      background: transparent;
-      color: var(--muted);
-      width: 28px;
-      height: 28px;
-      cursor: pointer;
-      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      border-radius: 10px;
+      color: var(--color-text-faint);
+      background: rgba(255,255,255,0.03);
     }
 
     .chat-item-delete:hover {
-      background: var(--danger-bg);
-      color: var(--danger);
+      color: #fff;
+      background: rgba(199,94,151,0.18);
     }
 
-    .main {
+    .sidebar-auth {
+      padding: var(--space-4);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .auth-card {
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.03);
+      padding: 14px;
+    }
+
+    .auth-user {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .auth-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .auth-meta {
       min-width: 0;
-      min-height: 100vh;
+      flex: 1;
+    }
+
+    .auth-name {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .auth-email {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .auth-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .main-panel {
+      min-width: 0;
       display: grid;
       grid-template-rows: auto 1fr auto;
+      height: 100dvh;
+      overflow: hidden;
     }
 
     .topbar {
       position: sticky;
       top: 0;
-      z-index: 20;
-      backdrop-filter: blur(10px);
-      background: color-mix(in srgb, var(--bg) 88%, transparent);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 18px;
+      z-index: 30;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
+      gap: var(--space-3);
+      padding:
+        max(env(safe-area-inset-top), 12px)
+        clamp(14px, 2vw, 22px)
+        14px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(23,22,20,0.78);
+      backdrop-filter: blur(14px);
     }
 
-    .topbar-left, .topbar-right {
+    .topbar-left,
+    .topbar-right {
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
     }
 
-    .mobile-only { display: none; }
-
-    .title-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .topbar-title-wrap {
+      min-width: 0;
     }
 
-    .title-stack h1 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1.1;
+    .topbar-title {
+      font-size: var(--text-lg);
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .title-stack p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 13px;
+    .topbar-subtitle {
+      color: var(--color-text-muted);
+      font-size: var(--text-xs);
+      margin-top: 2px;
     }
 
     .model-select {
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      border-radius: 12px;
       min-height: 42px;
-      padding: 0 12px;
-      min-width: 220px;
+      min-width: 170px;
+      border-radius: 12px;
+      padding: 0 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
     }
 
-    .chat-area {
-      overflow: auto;
-      padding: 28px 20px 140px;
+    .status-chip {
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .chat {
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 18px clamp(14px, 2vw, 22px) 0;
+      scroll-behavior: smooth;
+      content-visibility: auto;
     }
 
     .chat-inner {
-      max-width: 900px;
+      width: min(100%, 960px);
       margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
+      padding-bottom: 28px;
     }
 
     .chat-empty {
-      min-height: 50vh;
+      min-height: 100%;
       display: grid;
       place-items: center;
       text-align: center;
-      color: var(--muted);
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.03em;
+      color: var(--color-text-muted);
+      padding: 32px 16px;
+      font-size: var(--text-base);
     }
 
     .message-wrapper {
       display: flex;
+      margin-bottom: 16px;
     }
 
     .message-wrapper.user {
       justify-content: flex-end;
     }
 
-    .message-wrapper.assistant {
+    .message-wrapper.assistant,
+    .message-wrapper.system {
       justify-content: flex-start;
     }
 
     .message-content {
-      max-width: min(100%, 760px);
-      border-radius: 22px;
-      padding: 16px 18px;
-      line-height: 1.65;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      word-break: break-word;
+      width: min(100%, 820px);
+      border-radius: 20px;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      overflow-wrap: anywhere;
+      box-shadow: var(--shadow-sm);
     }
 
     .message-wrapper.user .message-content {
-      background: var(--primary);
-      color: white;
-      border-color: transparent;
-      box-shadow: none;
+      background: rgba(88,166,178,0.12);
+      border-color: rgba(88,166,178,0.2);
     }
 
     .message-wrapper.assistant .message-content {
-      background: var(--surface);
-      color: var(--text);
+      background: rgba(255,255,255,0.04);
     }
 
-    .message-content p:first-child { margin-top: 0; }
-    .message-content p:last-child { margin-bottom: 0; }
+    .message-content p + p { margin-top: 0.8em; }
+    .message-content ul,
+    .message-content ol { padding-left: 1.2em; margin-top: 0.8em; }
+    .message-content li + li { margin-top: 0.3em; }
     .message-content pre {
-      overflow: auto;
+      margin-top: 0.9em;
+      overflow-x: auto;
+      border-radius: 14px;
       padding: 14px;
-      border-radius: 14px;
-      background: #0d1117;
+      background: #11100f;
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
     }
-    .message-content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .message-content ul, .message-content ol { padding-left: 20px; }
 
-    .inline-preview-image {
+    .message-content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .message-content pre code {
+      background: transparent;
+      padding: 0;
+    }
+
+    .message-content :not(pre) > code {
+      background: rgba(255,255,255,0.07);
+      border-radius: 8px;
+      padding: 0.1em 0.45em;
+      font-size: 0.95em;
+    }
+
+    .message-attachments {
       margin-top: 12px;
-      max-width: 280px;
-      border-radius: 14px;
-      border: 1px solid var(--border);
+      display: grid;
+      gap: 10px;
+    }
+
+    .attachment-card {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      max-width: 420px;
+    }
+
+    .attachment-card img {
+      width: 100%;
+      height: auto;
+      max-height: 380px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .attachment-meta {
+      padding: 10px 12px;
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .composer-wrap {
+      position: sticky;
+      bottom: 0;
+      z-index: 25;
+      padding:
+        10px
+        clamp(10px, 2vw, 18px)
+        calc(max(env(safe-area-inset-bottom), 10px) + 10px);
+      background:
+        linear-gradient(to top, rgba(23,22,20,0.97), rgba(23,22,20,0.84), rgba(23,22,20,0.4), transparent);
+      backdrop-filter: blur(10px);
+    }
+
+    .composer-shell {
+      width: min(100%, var(--composer-max));
+      margin: 0 auto;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(28,27,25,0.92);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    .selected-image-bar {
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .selected-image-preview {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: rgba(255,255,255,0.04);
+      flex: 0 0 auto;
+    }
+
+    .selected-image-meta {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .selected-image-label {
+      font-size: var(--text-xs);
+      color: var(--color-text-faint);
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .selected-image-name {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--color-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .composer-form {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .composer-textarea {
+      width: 100%;
+      min-height: 64px;
+      max-height: 220px;
+      resize: none;
+      overflow-y: auto;
+      background: transparent;
+      color: var(--color-text);
+      font-size: var(--text-base);
+      line-height: 1.55;
+      padding: 4px 2px;
+    }
+
+    .composer-textarea::placeholder {
+      color: var(--color-text-faint);
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .composer-left,
+    .composer-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill-btn {
+      min-height: 42px;
+      padding: 0 14px;
+      border-radius: var(--radius-full);
+      background: rgba(255,255,255,0.04);
+      color: var(--color-text-muted);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--text-sm);
+      font-weight: 600;
+    }
+
+    .pill-btn:hover {
+      background: rgba(255,255,255,0.08);
+      color: var(--color-text);
+    }
+
+    .send-btn {
+      min-width: 116px;
     }
 
     .error-card {
-      background: var(--danger-bg);
-      color: var(--text);
-      border: 1px solid rgba(249,112,102,0.25);
-      border-radius: 14px;
-      padding: 12px;
+      border-radius: 16px;
+      background: rgba(199,94,151,0.08);
+      border: 1px solid rgba(199,94,151,0.2);
+      color: #f0d9e6;
+      padding: 14px;
     }
 
     .error-actions {
       margin-top: 10px;
     }
 
-    .composer-wrap {
-      position: sticky;
-      bottom: 0;
-      background: linear-gradient(to top, var(--bg), color-mix(in srgb, var(--bg) 30%, transparent));
-      padding: 12px 20px 20px;
-      border-top: 1px solid var(--border);
-    }
-
-    .composer {
-      max-width: 900px;
-      margin: 0 auto;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      padding: 12px;
-    }
-
-    .selected-image-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 8px 12px;
-    }
-
-    .selected-image-bar img {
-      width: 56px;
-      height: 56px;
-      object-fit: cover;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-    }
-
-    .selected-image-meta {
-      min-width: 0;
-      flex: 1;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .composer-row {
-      display: flex;
-      align-items: flex-end;
-      gap: 10px;
-    }
-
-    .composer textarea {
-      flex: 1;
-      border: 0;
-      outline: none;
-      resize: none;
-      background: transparent;
-      color: var(--text);
-      padding: 10px 8px;
-      min-height: 52px;
-      max-height: 180px;
-      line-height: 1.5;
-    }
-
-    .composer-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .status-text {
-      max-width: 900px;
-      margin: 8px auto 0;
-      color: var(--muted);
-      font-size: 13px;
-      padding-left: 4px;
-    }
-
-    .mobile-overlay {
-      display: none;
-    }
-
     .thought-block {
-      margin: 10px 0;
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      margin-top: 12px;
+      border-radius: 14px;
       overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
     }
 
     .thought-block summary {
+      list-style: none;
       cursor: pointer;
       padding: 10px 12px;
-      background: var(--surface-2);
+      font-size: var(--text-sm);
       font-weight: 600;
+      color: var(--color-text-muted);
     }
 
     .thought-content {
-      padding: 12px;
-      color: var(--muted);
-      font-size: 14px;
+      padding: 0 12px 12px;
+      color: var(--color-text-muted);
+      font-size: var(--text-sm);
     }
 
-    @media (max-width: 960px) {
-      .app {
+    .mobile-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.48);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-interactive);
+      z-index: 35;
+    }
+
+    .mobile-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .desktop-only { display: inline-grid; }
+    .mobile-only { display: none; }
+
+    @media (max-width: 1024px) {
+      .app-shell {
         grid-template-columns: 1fr;
       }
 
       .sidebar {
         position: fixed;
-        left: 0;
-        top: 0;
-        bottom: 0;
+        inset: 0 auto 0 0;
         width: min(88vw, 340px);
+        max-width: 340px;
         transform: translateX(-100%);
-        transition: transform .2s ease;
-        z-index: 50;
+        transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: var(--shadow-lg);
       }
 
       .sidebar.open {
         transform: translateX(0);
       }
 
-      .mobile-overlay.show {
-        display: block;
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.5);
-        z-index: 40;
-      }
+      .desktop-only { display: none; }
+      .mobile-only { display: inline-grid; }
+    }
 
-      .mobile-only {
-        display: inline-flex;
-      }
-
+    @media (max-width: 768px) {
       .topbar {
-        padding: 12px 14px;
+        padding-inline: 12px;
       }
 
-      .chat-area {
-        padding: 18px 12px 132px;
+      .topbar-title {
+        font-size: 1.05rem;
       }
 
-      .composer-wrap {
-        padding: 10px 12px 14px;
+      .topbar-subtitle {
+        display: none;
+      }
+
+      .topbar-right {
+        gap: 8px;
       }
 
       .model-select {
-        min-width: 150px;
-        max-width: 160px;
+        min-width: 0;
+        width: 138px;
+        font-size: 14px;
+      }
+
+      .chat {
+        padding-inline: 10px;
+      }
+
+      .chat-inner {
+        padding-bottom: 18px;
+      }
+
+      .message-content {
+        width: min(100%, 100%);
+        padding: 12px 13px;
+        border-radius: 18px;
+      }
+
+      .composer-wrap {
+        padding-inline: 10px;
+      }
+
+      .composer-shell {
+        border-radius: 22px;
+      }
+
+      .composer-form {
+        padding: 10px;
+      }
+
+      .composer-textarea {
+        min-height: 52px;
+        font-size: 16px;
+      }
+
+      .composer-actions {
+        align-items: stretch;
+      }
+
+      .composer-left,
+      .composer-right {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .pill-btn,
+      .send-btn {
+        min-height: 44px;
+      }
+
+      .status-chip {
+        display: none;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .topbar-right .model-select {
+        width: 122px;
+        padding-inline: 10px;
+      }
+
+      .brand-title {
+        font-size: 14px;
+      }
+
+      .auth-card {
+        padding: 12px;
+      }
+
+      .selected-image-preview {
+        width: 46px;
+        height: 46px;
+      }
+
+      .attachment-card {
+        max-width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
       }
     }
   </style>
 </head>
 <body>
-  <div class="app">
+  <div class="mobile-overlay" id="mobileOverlay"></div>
+
+  <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand">
-        <div class="brand-title">AI Chat</div>
-        <button id="themeToggleBtn" class="icon-btn" title="Theme">☀️</button>
-      </div>
-
-      <button id="newChatBtn" class="primary-btn">Новий чат</button>
-
-      <div class="auth-card">
-        <div id="authLoggedOut">
-          <button id="googleLoginBtn" class="secondary-btn" style="width:100%;">Увійти через Google</button>
+      <div class="sidebar-top">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-label="AI logo">
+              <path d="M6 18L12 6L18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8.5 13.5H15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <div class="brand-title">AI Chat v2</div>
+            <div class="brand-subtitle">Швидко, стабільно, з історією</div>
+          </div>
         </div>
 
-        <div id="authLoggedIn" class="hidden">
-          <div class="user-row">
-            <img id="userAvatar" alt="avatar" />
-            <div class="user-meta">
-              <div class="user-name" id="userName">User</div>
-              <div class="user-email" id="userEmail"></div>
+        <button class="icon-btn mobile-only" id="closeSidebarBtn" aria-label="Закрити меню">
+          ✕
+        </button>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="primary-btn" id="newChatBtn">Новий чат</button>
+      </div>
+
+      <div class="sidebar-section-title">Історія</div>
+      <div class="chat-list" id="chatList"></div>
+
+      <div class="sidebar-auth">
+        <div class="auth-card">
+          <div id="authLoggedOut">
+            <button class="primary-btn" id="googleLoginBtn">Увійти через Google</button>
+          </div>
+
+          <div id="authLoggedIn" class="hidden">
+            <div class="auth-user">
+              <img class="auth-avatar" id="userAvatar" alt="Avatar" />
+              <div class="auth-meta">
+                <div class="auth-name" id="userName">User</div>
+                <div class="auth-email" id="userEmail"></div>
+              </div>
+            </div>
+            <div class="auth-actions">
+              <button class="secondary-btn" id="logoutBtn">Вийти</button>
             </div>
           </div>
-          <div style="margin-top:12px;">
-            <button id="logoutBtn" class="secondary-btn" style="width:100%;">Вийти</button>
-          </div>
         </div>
       </div>
-
-      <div class="chat-list" id="chatList"></div>
     </aside>
 
-    <div class="mobile-overlay" id="mobileOverlay"></div>
-
-    <main class="main">
+    <main class="main-panel">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="hamburgerBtn" class="icon-btn mobile-only" title="Menu">☰</button>
-          <div class="title-stack">
-            <h1>AI Chat</h1>
-            <p>Auto routing + history + images</p>
+          <button class="icon-btn mobile-only" id="hamburgerBtn" aria-label="Відкрити меню">☰</button>
+          <div class="topbar-title-wrap">
+            <div class="topbar-title" id="currentChatTitle">Новий чат</div>
+            <div class="topbar-subtitle">Історія, моделі, фото і стабільна мобільна верстка</div>
           </div>
         </div>
 
         <div class="topbar-right">
-          <select id="model" class="model-select">
-            <option value="auto" selected>Auto</option>
-            <option value="github/gpt-4o-mini">GPT-4o mini · GitHub</option>
-            <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B · Groq</option>
+          <div class="status-chip hidden" id="statusText"></div>
+          <select class="model-select" id="model" aria-label="Вибір моделі">
+            <option value="auto">Auto</option>
+            <option value="github/gpt-4o-mini">GPT-4o mini</option>
+            <option value="groq/llama-3.3-70b-versatile">Groq Llama 3.3 70B</option>
             <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="mistral/codestral">Codestral · Mistral</option>
+            <option value="mistral/codestral">Codestral</option>
             <option value="mistral/mistral-large">Mistral Large</option>
-            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
-            <option value="google/gemma-3-27b-it">Gemma 3 27B IT</option>
-            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
-            <option value="cerebras/llama-3.1-70b">Llama 3.1 70B · Cerebras</option>
-            <option value="github/phi-4">Phi-4 · GitHub</option>
+            <option value="meta/llama-3.3-70b-instruct">Meta Llama 3.3 70B</option>
+            <option value="google/gemma-3-27b-it">Gemma 3 27B</option>
+            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 Vision</option>
+            <option value="cerebras/llama-3.1-70b">Cerebras Llama 3.1 70B</option>
+            <option value="github/phi-4">Phi-4</option>
           </select>
-
-          <button id="clearBtn" class="secondary-btn">Очистити</button>
         </div>
       </header>
 
-      <section class="chat-area" id="chat">
-        <div class="chat-inner">
-          <div class="chat-empty">Що хочеш дізнатись?</div>
-        </div>
+      <section class="chat" id="chat">
+        <div class="chat-inner"></div>
       </section>
 
       <div class="composer-wrap">
-        <form id="chatForm" class="composer">
-          <input id="imageInput" type="file" accept="image/*" hidden />
-
-          <div id="selectedImageBar" class="selected-image-bar hidden">
-            <img id="selectedImagePreview" alt="selected image preview" />
+        <div class="composer-shell">
+          <div class="selected-image-bar hidden" id="selectedImageBar">
+            <img class="selected-image-preview" id="selectedImagePreview" alt="Selected image preview" />
             <div class="selected-image-meta">
-              <div id="selectedImageName">image</div>
+              <div class="selected-image-label">Фото</div>
+              <div class="selected-image-name" id="selectedImageName"></div>
             </div>
-            <button type="button" id="removeImageBtn" class="secondary-btn">Прибрати</button>
+            <button class="icon-btn" id="removeImageBtn" aria-label="Прибрати фото">✕</button>
           </div>
 
-          <div class="composer-row">
-            <button type="button" id="imageBtn" class="icon-btn" title="Image">＋</button>
-            <textarea id="prompt" placeholder="Напиши повідомлення..." rows="1"></textarea>
+          <form class="composer-form" id="chatForm">
+            <textarea
+              id="prompt"
+              class="composer-textarea"
+              placeholder="Напиши повідомлення..."
+              rows="1"
+              autocomplete="off"
+            ></textarea>
+
             <div class="composer-actions">
-              <button type="button" id="stopBtn" class="secondary-btn hidden">Стоп</button>
-              <button type="submit" id="sendBtn" class="primary-btn">Надіслати</button>
-            </div>
-          </div>
-        </form>
+              <div class="composer-left">
+                <input id="imageInput" type="file" accept="image/*" class="hidden" />
+                <button class="pill-btn" type="button" id="imageBtn">Фото</button>
+                <button class="pill-btn" type="button" id="clearBtn">Очистити</button>
+              </div>
 
-        <div id="statusText" class="status-text hidden"></div>
+              <div class="composer-right">
+                <button class="pill-btn hidden" type="button" id="stopBtn">Стоп</button>
+                <button class="primary-btn send-btn" type="submit" id="sendBtn">Надіслати</button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </main>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>
