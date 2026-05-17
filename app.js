@@ -29,7 +29,7 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v7";
+const STORAGE_KEY = "ai-chat-worker-v8";
 
 const ALLOWED_MODELS = {
   auto: {
@@ -399,15 +399,6 @@ function openSidebar() {
   document.body.classList.add("no-scroll");
 }
 
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
-    reader.readAsDataURL(file);
-  });
-}
-
 async function historyApi(path, options = {}) {
   if (!currentUser?.id) {
     throw new Error("Спочатку увійди через Google");
@@ -417,10 +408,7 @@ async function historyApi(path, options = {}) {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": currentUser.id,
-      "X-User-Email": currentUser.email || "",
-      "X-User-Name": currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "",
-      "X-User-Avatar": currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || "",
+      "X-User-Id": String(currentUser.id),
       ...(options.headers || {})
     }
   });
@@ -453,9 +441,9 @@ async function loadChatsFromWorker() {
     state.chats = [...localUnsaved, ...serverChats];
 
     if (!state.chats.length) {
-      const chat = createLocalChat();
-      state.chats = [chat];
-      state.activeChatId = getChatKey(chat);
+      const chatItem = createLocalChat();
+      state.chats = [chatItem];
+      state.activeChatId = getChatKey(chatItem);
     } else if (!state.activeChatId || !state.chats.find((c) => getChatKey(c) === state.activeChatId)) {
       state.activeChatId = getChatKey(state.chats[0]);
     }
@@ -851,29 +839,6 @@ newChatBtn?.addEventListener("click", () => {
 
 imageBtn?.addEventListener("click", () => {
   alert("Збереження картинок у поточній D1 схемі ще не підключене.");
-});
-
-imageInput?.addEventListener("change", async () => {
-  const file = imageInput.files?.[0];
-  if (!file) return;
-
-  if (file.size > 5 * 1024 * 1024) {
-    alert("Файл завеликий. Максимум 5 MB.");
-    imageInput.value = "";
-    return;
-  }
-
-  try {
-    const dataUrl = await fileToDataUrl(file);
-    selectedImage = {
-      name: file.name,
-      type: file.type,
-      dataUrl
-    };
-    updateSelectedImageUI();
-  } catch {
-    alert("Не вдалося завантажити зображення");
-  }
 });
 
 removeImageBtn?.addEventListener("click", clearSelectedImage);
