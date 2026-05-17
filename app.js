@@ -21,15 +21,16 @@ const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
-const themeToggleBtn = document.getElementById("themeToggleBtn");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
+const closeSidebarBtn = document.getElementById("closeSidebarBtn");
+const currentChatTitle = document.getElementById("currentChatTitle");
 
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v8";
+const STORAGE_KEY = "ai-chat-worker-v2";
 
 const ALLOWED_MODELS = {
   auto: {
@@ -105,11 +106,9 @@ if (!state || !Array.isArray(state.chats)) {
   state = {
     activeChatId: null,
     chats: [],
-    drafts: {},
-    theme: "dark"
+    drafts: {}
   };
 }
-if (!state.theme) state.theme = "dark";
 if (!state.drafts || typeof state.drafts !== "object") state.drafts = {};
 
 const renderer = new marked.Renderer();
@@ -133,7 +132,7 @@ function formatThinking(text) {
 }
 
 function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(formatThinking(text)), {
+  return DOMPurify.sanitize(marked.parse(formatThinking(text || "")), {
     ADD_TAGS: ["details", "summary"]
   });
 }
@@ -196,10 +195,8 @@ function clearDraft() {
   const key = getActiveChatDraftKey();
   delete state.drafts[key];
   saveState();
-  if (promptInput) {
-    promptInput.value = "";
-    autoResize();
-  }
+  promptInput.value = "";
+  autoResize();
 }
 
 function escapeHtml(text) {
@@ -208,11 +205,9 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function applyTheme() {
-  document.documentElement.setAttribute("data-theme", state.theme);
-  if (themeToggleBtn) {
-    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
-  }
+function updateCurrentChatTitle() {
+  const active = getActiveChat();
+  currentChatTitle.textContent = active?.title || "Новий чат";
 }
 
 function renderAuthState() {
@@ -228,11 +223,10 @@ function renderAuthState() {
   const meta = currentUser.user_metadata || {};
   if (userName) userName.textContent = meta.full_name || meta.name || currentUser.email || "User";
   if (userEmail) userEmail.textContent = currentUser.email || "";
-  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/40x40/png";
+  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
 }
 
 function renderChatList() {
-  if (!chatList) return;
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
@@ -247,7 +241,7 @@ function renderChatList() {
     div.innerHTML = `
       <div class="chat-item-main">
         <div class="chat-item-title">${escapeHtml(item.title || "Новий чат")}</div>
-        <div class="chat-item-subtitle">${escapeHtml(String(subtitle).slice(0, 90))}</div>
+        <div class="chat-item-subtitle">${escapeHtml(String(subtitle).slice(0, 100))}</div>
       </div>
       <button class="chat-item-delete" title="Видалити">✕</button>
     `;
@@ -263,9 +257,9 @@ function renderChatList() {
       state.chats = state.chats.filter((c) => getChatKey(c) !== getChatKey(item));
 
       if (!state.chats.length) {
-        const newChat = createLocalChat();
-        state.chats = [newChat];
-        state.activeChatId = getChatKey(newChat);
+        const next = createLocalChat();
+        state.chats = [next];
+        state.activeChatId = getChatKey(next);
       } else {
         state.activeChatId = getChatKey(state.chats[0]);
       }
@@ -276,7 +270,6 @@ function renderChatList() {
 
     div.onclick = async () => {
       if (requestInFlight) return;
-
       state.activeChatId = getChatKey(item);
       saveState();
 
@@ -293,17 +286,38 @@ function renderChatList() {
   }
 }
 
-function renderMessages() {
-  if (!chat) return;
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
+function renderAttachmentCard(att) {
+  if (!att || att.kind !== "image" || !att.url) return "";
+  return `
+    <div class="attachment-card">
+      <img src="${escapeHtml(att.url)}" alt="${escapeHtml(att.file_name || "Image attachment")}" loading="lazy" decoding="async">
+      <div class="attachment-meta">
+        <span>${escapeHtml(att.file_name || "image")}</span>
+        <span>${escapeHtml(formatBytes(att.file_size || 0))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMessages() {
   chat.innerHTML = `<div class="chat-inner"></div>`;
   const inner = chat.querySelector(".chat-inner");
   const active = getActiveChat();
 
   if (!active || !active.messages?.length) {
     inner.innerHTML = `<div class="chat-empty">Що хочеш дізнатись?</div>`;
+    queueMicrotask(scrollChatToBottom);
     return;
   }
+
+  const fragment = document.createDocumentFragment();
 
   for (const msg of active.messages) {
     const wrapper = document.createElement("div");
@@ -330,17 +344,26 @@ function renderMessages() {
       content.appendChild(text);
     }
 
+    if (Array.isArray(msg.attachments) && msg.attachments.length) {
+      const attachWrap = document.createElement("div");
+      attachWrap.className = "message-attachments";
+      attachWrap.innerHTML = msg.attachments.map(renderAttachmentCard).join("");
+      content.appendChild(attachWrap);
+    }
+
     wrapper.appendChild(content);
-    inner.appendChild(wrapper);
+    fragment.appendChild(wrapper);
   }
 
-  chat.scrollTop = chat.scrollHeight;
+  inner.appendChild(fragment);
+  requestAnimationFrame(scrollChatToBottom);
 }
 
 function renderAll() {
   renderAuthState();
   renderChatList();
   renderMessages();
+  updateCurrentChatTitle();
 
   if (requestInFlight) {
     stopBtn?.classList.remove("hidden");
@@ -354,36 +377,37 @@ function renderAll() {
 }
 
 function autoResize() {
-  if (!promptInput) return;
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 180) + "px";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
+}
+
+function scrollChatToBottom() {
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function updateSelectedImageUI() {
   if (!selectedImage) {
     selectedImageBar?.classList.add("hidden");
     selectedImagePreview?.removeAttribute("src");
-    if (selectedImageName) selectedImageName.textContent = "";
+    selectedImageName.textContent = "";
     return;
   }
 
   selectedImageBar?.classList.remove("hidden");
-  if (selectedImagePreview) selectedImagePreview.src = selectedImage.dataUrl;
-  if (selectedImageName) selectedImageName.textContent = selectedImage.name || "image";
+  selectedImagePreview.src = selectedImage.dataUrl;
+  selectedImageName.textContent = selectedImage.name || "image";
 }
 
 function clearSelectedImage() {
   selectedImage = null;
-  if (imageInput) imageInput.value = "";
+  imageInput.value = "";
   updateSelectedImageUI();
 }
 
 function setBusy(isBusy, text = "") {
   requestInFlight = isBusy;
-  if (statusText) {
-    statusText.textContent = text || "";
-    statusText.classList.toggle("hidden", !text);
-  }
+  statusText.textContent = text || "";
+  statusText.classList.toggle("hidden", !text);
   renderAll();
 }
 
@@ -407,13 +431,16 @@ async function historyApi(path, options = {}) {
   const response = await fetch(`${HISTORY_API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
       "X-User-Id": String(currentUser.id),
       ...(options.headers || {})
     }
   });
 
-  const data = await response.json().catch(() => ({}));
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : {};
+
   if (!response.ok) {
     throw new Error(data?.error || `History API error ${response.status}`);
   }
@@ -421,12 +448,43 @@ async function historyApi(path, options = {}) {
   return data;
 }
 
+async function historyJson(path, method = "GET", body = null) {
+  return historyApi(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+}
+
+async function uploadAttachment(chatId, file, localPreviewUrl = "") {
+  const fd = new FormData();
+  fd.append("chat_id", String(chatId));
+  fd.append("file", file);
+
+  const res = await fetch(`${HISTORY_API_BASE}/api/attachments/upload`, {
+    method: "POST",
+    headers: {
+      "X-User-Id": String(currentUser.id)
+    },
+    body: fd
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "Upload error");
+
+  return {
+    localPreviewUrl,
+    ...data.attachment
+  };
+}
+
 async function loadChatsFromWorker() {
   if (!currentUser || hasLoadedChats) return;
 
   try {
     const data = await historyApi("/api/chats");
-
     const serverChats = (data.chats || []).map((chatItem) => ({
       id: String(chatItem.id),
       localId: String(chatItem.id),
@@ -441,9 +499,9 @@ async function loadChatsFromWorker() {
     state.chats = [...localUnsaved, ...serverChats];
 
     if (!state.chats.length) {
-      const chatItem = createLocalChat();
-      state.chats = [chatItem];
-      state.activeChatId = getChatKey(chatItem);
+      const item = createLocalChat();
+      state.chats = [item];
+      state.activeChatId = getChatKey(item);
     } else if (!state.activeChatId || !state.chats.find((c) => getChatKey(c) === state.activeChatId)) {
       state.activeChatId = getChatKey(state.chats[0]);
     }
@@ -508,7 +566,6 @@ window.retryMessage = function () {
 
 function buildMessagesForAPI(active, assistantMsgId, modelConf) {
   const rawMessages = [{ role: "system", content: modelConf.system }];
-
   const recent = active.messages
     .slice(-12)
     .filter((m) => String(m.id) !== String(assistantMsgId) && !m.isError);
@@ -556,12 +613,9 @@ async function ensureServerChatForActive(firstMessageText = "Новий чат")
   let active = ensureLocalChatStub();
   if (active.id) return active;
 
-  const created = await historyApi("/api/chats", {
-    method: "POST",
-    body: JSON.stringify({
-      title: (firstMessageText || "Новий чат").slice(0, 48),
-      model: modelSelect?.value || "auto"
-    })
+  const created = await historyJson("/api/chats", "POST", {
+    title: (firstMessageText || "Новий чат").slice(0, 48),
+    model: modelSelect?.value || "auto"
   });
 
   active.id = String(created.chat.id);
@@ -571,6 +625,15 @@ async function ensureServerChatForActive(firstMessageText = "Новий чат")
   saveState();
 
   return active;
+}
+
+async function saveMessageOnServer(chatId, role, content, model = "", attachments = []) {
+  return historyJson(`/api/chats/${chatId}/messages`, "POST", {
+    role,
+    content,
+    model,
+    attachments
+  });
 }
 
 async function sendChatMessage(text, isRetry = false) {
@@ -593,15 +656,30 @@ async function sendChatMessage(text, isRetry = false) {
   try {
     active = await ensureServerChatForActive(text);
 
+    let uploadedAttachment = null;
+    if (selectedImage?.file) {
+      setBusy(true, "Завантажую фото...");
+      uploadedAttachment = await uploadAttachment(active.id, selectedImage.file, selectedImage.dataUrl);
+    }
+
+    let userMessage = null;
     if (!isRetry) {
-      const localUserMessage = {
+      userMessage = {
         id: `tmp_user_${Date.now()}`,
         role: "user",
         content: text,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        attachments: uploadedAttachment
+          ? [{
+              kind: "image",
+              url: uploadedAttachment.url,
+              file_name: uploadedAttachment.file_name,
+              file_size: uploadedAttachment.file_size
+            }]
+          : []
       };
 
-      active.messages.push(localUserMessage);
+      active.messages.push(userMessage);
 
       if (!active.title || active.title === "Новий чат") {
         active.title = text.slice(0, 48);
@@ -611,169 +689,82 @@ async function sendChatMessage(text, isRetry = false) {
       active.updatedAt = Date.now();
       saveState();
       renderAll();
-
-      const saved = await historyApi("/api/messages", {
-        method: "POST",
-        body: JSON.stringify({
-          chatId: Number(active.id),
-          content: text
-        })
-      });
-
-      localUserMessage.id = String(saved.message.id);
-      active.title = saved.chat.title || active.title;
-      active.updatedAt = saved.message.createdAt || Date.now();
-      saveState();
       clearDraft();
+      clearSelectedImage();
+
+      const savedUser = await saveMessageOnServer(
+        active.id,
+        "user",
+        text,
+        modelId,
+        uploadedAttachment ? [uploadedAttachment.id] : []
+      );
+
+      userMessage.id = String(savedUser.message.id || userMessage.id);
     }
 
-    const assistantMsg = {
+    const assistantMessage = {
       id: `tmp_assistant_${Date.now()}`,
       role: "assistant",
-      content: "",
-      createdAt: Date.now()
+      content: ""
     };
 
-    active.messages.push(assistantMsg);
-    active.updatedAt = Date.now();
+    active.messages.push(assistantMessage);
     saveState();
     renderAll();
 
-    const safeMessages = buildMessagesForAPI(active, assistantMsg.id, modelConf);
-    const controller = new AbortController();
-    currentController = controller;
+    const messages = buildMessagesForAPI(active, assistantMessage.id, modelConf);
+
+    currentController = new AbortController();
 
     const response = await fetch("/api/proxy", {
       method: "POST",
+      signal: currentController.signal,
       headers: {
         "Content-Type": "application/json"
       },
-      signal: controller.signal,
       body: JSON.stringify({
         model: modelId,
-        messages: safeMessages,
-        temperature: 0.2,
+        messages,
         max_tokens: modelConf.tokens,
-        top_p: 0.9,
-        stream: true
+        image_url: uploadedAttachment?.url || null
       })
     });
 
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const raw = await response.text().catch(() => "");
-      let message = `HTTP ${response.status}`;
-
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed?.details) {
-          message = typeof parsed.details === "string" ? parsed.details : JSON.stringify(parsed.details);
-        } else if (parsed?.error?.message) {
-          message = parsed.error.message;
-        } else if (parsed?.error) {
-          message = typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error);
-        } else if (raw) {
-          message = raw;
-        }
-      } catch {
-        if (raw) message = raw;
-      }
-
-      throw new Error(message);
+      throw new Error(data?.error || `Proxy error ${response.status}`);
     }
 
-    if (!response.body) {
-      throw new Error("Порожня відповідь сервера");
-    }
+    assistantMessage.content = data?.text || "Порожня відповідь";
+    saveState();
+    renderAll();
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-
-      for (const part of parts) {
-        const lines = part.split("\n");
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-
-          const dataStr = line.slice(5).trim();
-          if (!dataStr || dataStr === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(dataStr);
-            const delta =
-              parsed?.choices?.[0]?.delta?.content ??
-              parsed?.choices?.[0]?.message?.content;
-
-            if (typeof delta === "string") {
-              assistantMsg.content += delta;
-              active.updatedAt = Date.now();
-              renderMessages();
-            }
-          } catch {}
-        }
-      }
-    }
-
-    const savedAssistant = await historyApi("/api/messages/assistant", {
-      method: "POST",
-      body: JSON.stringify({
-        chatId: Number(active.id),
-        content: assistantMsg.content,
-        provider: null,
-        model: modelId
-      })
-    });
-
-    if (savedAssistant?.messageId) {
-      assistantMsg.id = String(savedAssistant.messageId);
-    }
+    const savedAssistant = await saveMessageOnServer(active.id, "assistant", assistantMessage.content, modelId, []);
+    assistantMessage.id = String(savedAssistant.message.id || assistantMessage.id);
 
     active.updatedAt = Date.now();
+    state.chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     saveState();
-    clearSelectedImage();
-    await loadChatDetails(active.id);
+    renderAll();
   } catch (e) {
-    const activeNow = getActiveChat();
-
-    if (e?.name !== "AbortError") {
-      if (activeNow?.messages?.length) {
-        const last = activeNow.messages[activeNow.messages.length - 1];
-        if (last?.role === "assistant" && !last.content) {
-          activeNow.messages.pop();
-        }
+    console.error(e);
+    const activeChat = getActiveChat();
+    if (activeChat) {
+      const last = activeChat.messages[activeChat.messages.length - 1];
+      if (last?.role === "assistant" && !last.content) {
+        activeChat.messages.pop();
       }
 
-      const errorMsg = {
-        id: `tmp_error_${Date.now()}`,
+      activeChat.messages.push({
+        id: `err_${Date.now()}`,
         role: "assistant",
-        isError: true,
-        content: e.message || "Невідома помилка",
-        createdAt: Date.now()
-      };
+        content: e.message || "Помилка",
+        isError: true
+      });
 
-      activeNow.messages.push(errorMsg);
-      activeNow.updatedAt = Date.now();
       saveState();
       renderAll();
-
-      if (activeNow?.id) {
-        await historyApi("/api/messages/assistant", {
-          method: "POST",
-          body: JSON.stringify({
-            chatId: Number(activeNow.id),
-            content: errorMsg.content,
-            provider: "error",
-            model: modelId
-          })
-        }).catch(() => {});
-      }
     }
   } finally {
     currentController = null;
@@ -781,67 +772,27 @@ async function sendChatMessage(text, isRetry = false) {
   }
 }
 
-themeToggleBtn?.addEventListener("click", () => {
-  state.theme = state.theme === "light" ? "dark" : "light";
-  saveState();
-  applyTheme();
-});
+async function initAuth() {
+  if (!sb) return;
 
-hamburgerBtn?.addEventListener("click", openSidebar);
-mobileOverlay?.addEventListener("click", closeSidebar);
+  const { data: { session } = {} } = await sb.auth.getSession();
+  currentUser = session?.user || null;
+  renderAll();
 
-form?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = promptInput?.value.trim() || "";
-  if (text) sendChatMessage(text);
-});
-
-promptInput?.addEventListener("input", () => {
-  autoResize();
-  saveDraft(promptInput.value);
-});
-
-promptInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    form?.requestSubmit();
-  }
-});
-
-stopBtn?.addEventListener("click", () => {
-  currentController?.abort();
-});
-
-clearBtn?.addEventListener("click", async () => {
-  const active = getActiveChat();
-  if (!active) return;
-  if (!confirm("Очистити поточний чат?")) return;
-
-  if (active.id && currentUser) {
-    await historyApi(`/api/chats/${active.id}`, { method: "DELETE" }).catch(console.error);
+  if (currentUser) {
+    await loadChatsFromWorker();
   }
 
-  const newLocalChat = createLocalChat();
-  state.chats = [newLocalChat, ...state.chats.filter((c) => getChatKey(c) !== getChatKey(active))];
-  state.activeChatId = getChatKey(newLocalChat);
-  saveState();
-  renderAll();
-});
+  sb.auth.onAuthStateChange(async (_event, sessionData) => {
+    currentUser = sessionData?.user || null;
+    hasLoadedChats = false;
+    renderAll();
 
-newChatBtn?.addEventListener("click", () => {
-  const newLocalChat = createLocalChat();
-  state.chats.unshift(newLocalChat);
-  state.activeChatId = getChatKey(newLocalChat);
-  saveState();
-  renderAll();
-  closeSidebar();
-});
-
-imageBtn?.addEventListener("click", () => {
-  alert("Збереження картинок у поточній D1 схемі ще не підключене.");
-});
-
-removeImageBtn?.addEventListener("click", clearSelectedImage);
+    if (currentUser) {
+      await loadChatsFromWorker();
+    }
+  });
+}
 
 googleLoginBtn?.addEventListener("click", async () => {
   if (!sb) return;
@@ -858,48 +809,116 @@ logoutBtn?.addEventListener("click", async () => {
   await sb.auth.signOut();
   currentUser = null;
   hasLoadedChats = false;
-  state.chats = [createLocalChat()];
-  state.activeChatId = getChatKey(state.chats[0]);
-  saveState();
-  renderAuthState();
   renderAll();
 });
 
-sb?.auth.onAuthStateChange(async (_event, session) => {
-  currentUser = session?.user || null;
-  hasLoadedChats = false;
-  renderAuthState();
+promptInput?.addEventListener("input", () => {
+  autoResize();
+  saveDraft(promptInput.value);
+});
 
-  if (currentUser) {
-    await loadChatsFromWorker();
+promptInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
   }
 });
 
-sb?.auth.getSession()
-  .then(async ({ data }) => {
-    currentUser = data?.session?.user || null;
-    renderAuthState();
+form?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = promptInput.value.trim();
+  if (!text) return;
+  await sendChatMessage(text);
+});
 
-    if (currentUser) {
-      await loadChatsFromWorker();
-    } else if (!state.chats.length) {
-      const chatItem = createLocalChat();
-      state.chats = [chatItem];
-      state.activeChatId = getChatKey(chatItem);
-      saveState();
-    }
-  })
-  .catch(() => {});
-
-applyTheme();
-
-if (!state.chats.length) {
-  const chatItem = createLocalChat();
-  state.chats = [chatItem];
-  state.activeChatId = getChatKey(chatItem);
+newChatBtn?.addEventListener("click", () => {
+  const fresh = createLocalChat();
+  state.chats.unshift(fresh);
+  state.activeChatId = getChatKey(fresh);
   saveState();
-}
+  renderAll();
+  closeSidebar();
+  promptInput.focus();
+});
 
-renderAll();
-autoResize();
-updateSelectedImageUI();
+clearBtn?.addEventListener("click", () => {
+  const active = getActiveChat();
+  if (!active) return;
+  if (!confirm("Очистити повідомлення цього чату локально?")) return;
+  active.messages = [];
+  active.preview = "";
+  active.title = active.id ? active.title : "Новий чат";
+  saveState();
+  renderAll();
+});
+
+stopBtn?.addEventListener("click", () => {
+  if (currentController) currentController.abort();
+});
+
+imageBtn?.addEventListener("click", () => imageInput.click());
+
+imageInput?.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    alert("Потрібен файл зображення.");
+    return;
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    alert("Фото занадто велике. До 8 MB.");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    selectedImage = {
+      file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      dataUrl: reader.result
+    };
+    updateSelectedImageUI();
+  };
+  reader.readAsDataURL(file);
+});
+
+removeImageBtn?.addEventListener("click", clearSelectedImage);
+
+hamburgerBtn?.addEventListener("click", openSidebar);
+closeSidebarBtn?.addEventListener("click", closeSidebar);
+mobileOverlay?.addEventListener("click", closeSidebar);
+
+window.addEventListener("resize", () => {
+  autoResize();
+  if (window.innerWidth > 1024) closeSidebar();
+});
+
+window.addEventListener("orientationchange", () => {
+  setTimeout(() => {
+    autoResize();
+    scrollChatToBottom();
+  }, 120);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    autoResize();
+  }
+});
+
+(function boot() {
+  if (!state.chats.length) {
+    const initial = createLocalChat();
+    state.chats = [initial];
+    state.activeChatId = getChatKey(initial);
+    saveState();
+  }
+
+  renderAll();
+  autoResize();
+  initAuth();
+})();
