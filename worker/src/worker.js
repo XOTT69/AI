@@ -2,7 +2,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id, X-User-Email, X-User-Name, X-User-Avatar",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id",
     "Access-Control-Max-Age": "86400"
   };
 }
@@ -31,7 +31,7 @@ function toMillis(value) {
   return value ? new Date(value).getTime() : Date.now();
 }
 
-async function getOrCreateUser(db, externalUserId, email = "", name = "", avatarUrl = "") {
+async function getOrCreateUser(db, externalUserId) {
   if (!externalUserId) {
     throw new Error("Missing external user id");
   }
@@ -51,9 +51,9 @@ async function getOrCreateUser(db, externalUserId, email = "", name = "", avatar
   await db
     .prepare(`
       INSERT INTO users (telegram_id, email, name, avatar_url, google_sub, created_at)
-      VALUES (NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES (NULL, NULL, NULL, NULL, ?, CURRENT_TIMESTAMP)
     `)
-    .bind(email || null, name || null, avatarUrl || null, externalUserId)
+    .bind(externalUserId)
     .run();
 
   user = await db
@@ -276,16 +276,13 @@ export default {
     }
 
     const externalUserId = request.headers.get("X-User-Id");
-    const userEmail = request.headers.get("X-User-Email") || "";
-    const userName = request.headers.get("X-User-Name") || "";
-    const userAvatar = request.headers.get("X-User-Avatar") || "";
 
     if (!externalUserId) {
       return json({ error: "Missing X-User-Id" }, 401);
     }
 
     try {
-      const user = await getOrCreateUser(db, externalUserId, userEmail, userName, userAvatar);
+      const user = await getOrCreateUser(db, externalUserId);
       const internalUserId = Number(user.id);
 
       if (request.method === "GET" && path === "/api/chats") {
