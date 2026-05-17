@@ -30,7 +30,7 @@ const currentChatTitle = document.getElementById("currentChatTitle");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v2";
+const STORAGE_KEY = "ai-chat-worker-debug-v1";
 
 const ALLOWED_MODELS = {
   auto: { system: "Ти корисний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
@@ -69,14 +69,13 @@ renderer.code = function (code, language) {
   const highlighted = hljs.highlight(code, { language: validLang }).value;
   return `<pre><code class="hljs ${validLang}">${highlighted}</code></pre>`;
 };
-
 marked.setOptions({ renderer, breaks: true, gfm: true });
 
 function formatThinking(text) {
   if (!text) return "";
-  let processed = text.replace(/<think>/g, `<details class="thought-block"><summary>Міркування</summary><div class="thought-content">`);
-  processed = processed.replace(/<\/think>/g, `</div></details>`);
-  return processed;
+  return String(text)
+    .replace(/<think>/g, `<details class="thought-block"><summary>Міркування</summary><div class="thought-content">`)
+    .replace(/<\/think>/g, `</div></details>`);
 }
 
 function renderMarkdown(text) {
@@ -371,29 +370,51 @@ function openSidebar() {
   document.body.classList.add("no-scroll");
 }
 
+async function safeFetchJson(url, options = {}, label = "request") {
+  let response;
+
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    throw new Error(`${label}: network error / CORS / endpoint недоступний`);
+  }
+
+  const rawText = await response.text().catch(() => "");
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = { raw: rawText };
+  }
+
+  if (!response.ok) {
+    const msg =
+      data?.error ||
+      data?.message ||
+      data?.details ||
+      `${label}: HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
 async function historyApi(path, options = {}) {
   if (!currentUser?.id) {
     throw new Error("Спочатку увійди через Google");
   }
 
-  const response = await fetch(`${HISTORY_API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "X-User-Id": String(currentUser.id),
-      ...(options.headers || {})
-    }
-  });
-
-  const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json")
-    ? await response.json().catch(() => ({}))
-    : {};
-
-  if (!response.ok) {
-    throw new Error(data?.error || `History API error ${response.status}`);
-  }
-
-  return data;
+  return safeFetchJson(
+    `${HISTORY_API_BASE}${path}`,
+    {
+      ...options,
+      headers: {
+        "X-User-Id": String(currentUser.id),
+        ...(options.headers || {})
+      }
+    },
+    `Worker ${path}`
+  );
 }
 
 async function historyJson(path, method = "GET", body = null) {
@@ -406,28 +427,34 @@ async function historyJson(path, method = "GET", body = null) {
   });
 }
 
+async function pingWorker() {
+  return safeFetchJson(`${HISTORY_API_BASE}/api/health`, {}, "Worker health");
+}
+
 async function uploadAttachment(chatId, file) {
   const fd = new FormData();
   fd.append("chat_id", String(chatId));
   fd.append("file", file);
 
-  const res = await fetch(`${HISTORY_API_BASE}/api/attachments/upload`, {
-    method: "POST",
-    headers: {
-      "X-User-Id": String(currentUser.id)
+  return safeFetchJson(
+    `${HISTORY_API_BASE}/api/attachments/upload`,
+    {
+      method: "POST",
+      headers: {
+        "X-User-Id": String(currentUser.id)
+      },
+      body: fd
     },
-    body: fd
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Upload error");
-  return data.attachment;
+    "Worker upload"
+  ).then((data) => data.attachment);
 }
 
 async function loadChatsFromWorker() {
   if (!currentUser || hasLoadedChats) return;
 
   try {
+    await pingWorker();
+
     const data = await historyApi("/api/chats");
     const serverChats = (data.chats || []).map((chatItem) => ({
       id: String(chatItem.id),
@@ -460,7 +487,8 @@ async function loadChatsFromWorker() {
 
     hasLoadedChats = true;
   } catch (e) {
-    console.error("Не вдалося завантажити чати:", e);
+    console.error("loadChatsFromWorker:", e);
+    setBusy(false, e.message || "Не вдалося завантажити чати");
   }
 }
 
@@ -516,11 +544,7 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf, imageUrl = null)
 
   for (const m of recent) {
     if (m.role === "user") {
-      if (
-        imageUrl &&
-        modelConf.vision &&
-        m === recent[recent.length - 1]
-      ) {
+      if (imageUrl && modelConf.vision && m === recent[recent.length - 1]) {
         rawMessages.push({
           role: "user",
           content: [
@@ -587,9 +611,10 @@ async function sendChatMessage(text, isRetry = false) {
   const modelId = modelSelect?.value || "auto";
   const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS.auto;
 
-  setBusy(true, "Думаю...");
+  setBusy(true, "Перевіряю backend...");
 
   try {
+    await pingWorker();
     active = await ensureServerChatForActive(text);
 
     let uploadedAttachment = null;
@@ -652,23 +677,24 @@ async function sendChatMessage(text, isRetry = false) {
     const messages = buildMessagesForAPI(active, assistantMessage.id, modelConf, uploadedAttachment?.url || null);
     currentController = new AbortController();
 
-    const response = await fetch("/api/proxy", {
-      method: "POST",
-      signal: currentController.signal,
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        max_tokens: modelConf.tokens
-      })
-    });
+    setBusy(true, "Викликаю Vercel proxy...");
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data?.error || `Proxy error ${response.status}`);
-    }
+    const data = await safeFetchJson(
+      "/api/proxy",
+      {
+        method: "POST",
+        signal: currentController.signal,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages,
+          max_tokens: modelConf.tokens
+        })
+      },
+      "Vercel /api/proxy"
+    );
 
     assistantMessage.content = data?.text || "Порожня відповідь";
     saveState();
@@ -682,7 +708,7 @@ async function sendChatMessage(text, isRetry = false) {
     saveState();
     renderAll();
   } catch (e) {
-    console.error(e);
+    console.error("sendChatMessage:", e);
     const activeChat = getActiveChat();
     if (activeChat) {
       const last = activeChat.messages[activeChat.messages.length - 1];
@@ -700,6 +726,7 @@ async function sendChatMessage(text, isRetry = false) {
       saveState();
       renderAll();
     }
+    setBusy(false, e.message || "Помилка запиту");
   } finally {
     currentController = null;
     setBusy(false, "");
@@ -819,7 +846,6 @@ imageInput?.addEventListener("change", async (e) => {
 });
 
 removeImageBtn?.addEventListener("click", clearSelectedImage);
-
 hamburgerBtn?.addEventListener("click", openSidebar);
 closeSidebarBtn?.addEventListener("click", closeSidebar);
 mobileOverlay?.addEventListener("click", closeSidebar);
@@ -834,10 +860,6 @@ window.addEventListener("orientationchange", () => {
     autoResize();
     scrollChatToBottom();
   }, 120);
-});
-
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) autoResize();
 });
 
 (function boot() {
