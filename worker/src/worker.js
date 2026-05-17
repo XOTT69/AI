@@ -84,7 +84,7 @@ async function getChatsWithPreview(db, userId) {
           SELECT m.content
           FROM messages m
           WHERE m.chat_id = c.id AND m.role = 'user'
-          ORDER BY m.created_at ASC
+          ORDER BY m.created_at DESC
           LIMIT 1
         ) AS preview
       FROM chats c
@@ -122,15 +122,6 @@ async function createChat(db, userId, title = "Новий чат") {
     created_at: ts,
     updated_at: ts
   };
-}
-
-async function ensureChat(db, userId, chatId, fallbackTitle = "Новий чат") {
-  if (chatId) {
-    const existing = await getChatById(db, userId, chatId);
-    if (existing) return existing;
-  }
-
-  return createChat(db, userId, fallbackTitle);
 }
 
 async function appendMessage(db, { chatId, role, content = "", imageDataUrl = null, isError = false }) {
@@ -250,17 +241,6 @@ export default {
         return json({ chat });
       }
 
-      if (request.method === "POST" && path === "/api/chats/ensure") {
-        const body = await request.json().catch(() => ({}));
-        const chat = await ensureChat(
-          db,
-          userId,
-          body.chatId || null,
-          String(body.title || "Новий чат").trim() || "Новий чат"
-        );
-        return json({ chat });
-      }
-
       if (request.method === "GET" && path.startsWith("/api/chats/")) {
         const parts = path.split("/").filter(Boolean);
 
@@ -308,27 +288,47 @@ export default {
 
       if (request.method === "POST" && path === "/api/messages") {
         const body = await request.json().catch(() => ({}));
+        const chatId = String(body.chatId || "").trim();
         const content = String(body.content || "").trim();
         const imageDataUrl = body.imageDataUrl || null;
+
+        if (!chatId) {
+          return json({ error: "chatId is required" }, 400);
+        }
+
+        const chat = await getChatById(db, userId, chatId);
+        if (!chat) {
+          return json({ error: "Chat not found" }, 404);
+        }
 
         if (!content && !imageDataUrl) {
           return json({ error: "Message content is required" }, 400);
         }
 
-        const title = content ? content.slice(0, 48) : "Новий чат";
-        const chat = await ensureChat(db, userId, body.chatId || null, title);
+        if (content && (chat.title === "Новий чат" || !chat.title)) {
+          await db
+            .prepare(`
+              UPDATE chats
+              SET title = ?, updated_at = ?
+              WHERE id = ? AND user_id = ?
+            `)
+            .bind(content.slice(0, 48), nowIso(), chatId, userId)
+            .run();
+        }
 
         const userMessage = await appendMessage(db, {
-          chatId: chat.id,
+          chatId,
           role: "user",
           content,
           imageDataUrl
         });
 
+        const updatedChat = await getChatById(db, userId, chatId);
+
         return json({
           chat: {
-            id: chat.id,
-            title: chat.title || title
+            id: updatedChat.id,
+            title: updatedChat.title || "Новий чат"
           },
           message: userMessage
         });
