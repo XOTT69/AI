@@ -1,627 +1,198 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="uk" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  
   <title>AI Chat</title>
-  
+  <link rel="manifest" href="/manifest.webmanifest">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&display=swap" rel="stylesheet">
+
+  <!-- Libs -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
   <script>
+    // Unregister old service workers
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for (let registration of registrations) registration.unregister();
-      });
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
     }
+    // Apply saved theme before paint
+    try {
+      const saved = JSON.parse(localStorage.getItem('ai-state-v1') || '{}');
+      document.documentElement.setAttribute('data-theme', saved.theme || 'dark');
+    } catch(e) {}
   </script>
 
-  <style>
-    :root {
-      --bg: #212121;
-      --sidebar: #171717;
-      --panel: #2f2f2f;
-      --panel-hover: #3a3a3a;
-      --text: #ececec;
-      --muted: #b4b4b4;
-      --accent: #10a37f;
-      --danger-bg: rgba(239,68,68,0.15);
-      --danger-text: #f87171;
-      --border: rgba(255,255,255,0.1);
-    }
-
-    [data-theme="light"] {
-      --bg: #ffffff;
-      --sidebar: #f9f9f9;
-      --panel: #f4f4f4;
-      --panel-hover: #e5e5e5;
-      --text: #0d0d0d;
-      --muted: #666666;
-      --accent: #10a37f;
-      --danger-bg: rgba(239,68,68,0.1);
-      --danger-text: #dc2626;
-      --border: rgba(0,0,0,0.1);
-    }
-
-    * { box-sizing: border-box; }
-    
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100%;
-      height: 100dvh;
-      width: 100%;
-      overflow: hidden;
-      overscroll-behavior: none;
-      transition: background 0.3s, color 0.3s;
-    }
-
-    .app-container { display: flex; height: 100%; width: 100%; }
-
-    .sidebar {
-      width: 260px;
-      background: var(--sidebar);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 2000;
-      padding-top: env(safe-area-inset-top, 0px);
-    }
-
-    .sidebar-header { padding: 12px; display: flex; gap: 8px; align-items: center; }
-
-    .btn-new-chat {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 10px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-
-    .btn-new-chat:hover { background: var(--panel); }
-
-    .theme-btn {
-      width: 40px;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-
-    .theme-btn:hover { background: var(--panel); }
-
-    .chat-list { flex: 1; overflow-y: auto; padding: 8px; }
-
-    .chat-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      border-radius: 8px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      border: none;
-      font-size: 14px;
-    }
-
-    .chat-item:hover { background: var(--panel); }
-    .chat-item.active { background: var(--panel); font-weight: 500; }
-
-    .chat-item-title {
-      flex: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .chat-item-delete {
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-      display: none;
-      font-size: 12px;
-    }
-
-    .chat-item:hover .chat-item-delete { display: block; }
-
-    .chat-item-delete:hover {
-      color: var(--danger-text);
-      background: var(--danger-bg);
-    }
-
-    .sidebar-footer {
-      padding: 12px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    }
-
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 4px;
-    }
-
-    .user-info img {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-    }
-
-    .user-details { overflow: hidden; }
-
-    .user-name {
-      font-size: 14px;
-      font-weight: 600;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      overflow: hidden;
-    }
-
-    .user-email {
-      font-size: 12px;
-      color: var(--muted);
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      overflow: hidden;
-    }
-
-    .btn {
-      background: var(--panel);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 10px;
-      border-radius: 8px;
-      font-weight: 500;
-      cursor: pointer;
-      width: 100%;
-      font-size: 14px;
-    }
-
-    .btn:hover { background: var(--panel-hover); }
-
-    .btn.danger {
-      color: var(--danger-text);
-      border-color: var(--danger-bg);
-      background: transparent;
-    }
-
-    .btn.danger:hover { background: var(--danger-bg); }
-
-    .main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      position: relative;
-      height: 100%;
-    }
-    
-    .topbar {
-      flex-shrink: 0;
-      padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      z-index: 10;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .hamburger-btn {
-      display: none;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font-size: 24px;
-      padding: 4px;
-      cursor: pointer;
-      margin-left: -4px;
-    }
-    
-    .model-select {
-      background: transparent;
-      color: var(--muted);
-      border: none;
-      font-size: 16px;
-      font-weight: 500;
-      cursor: pointer;
-      outline: none;
-      appearance: none;
-    }
-
-    .model-select option {
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .status-indicator {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .chat-container {
-      flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      scroll-behavior: smooth;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: 20px;
-    }
-
-    .chat-empty {
-      margin: auto;
-      color: var(--muted);
-      font-size: 15px;
-      font-weight: 500;
-    }
-    
-    .message-wrapper {
-      width: 100%;
-      max-width: 800px;
-      padding: 16px;
-      display: flex;
-    }
-
-    .message-wrapper.user { justify-content: flex-end; }
-    .message-wrapper.assistant { justify-content: flex-start; }
-
-    .message-content {
-      font-size: 15px;
-      line-height: 1.6;
-      max-width: 100%;
-      overflow-wrap: anywhere;
-      word-break: break-word;
-    }
-
-    .message-wrapper.user .message-content {
-      background: var(--panel);
-      padding: 12px 18px;
-      border-radius: 20px;
-      max-width: 85%;
-    }
-
-    .message-wrapper.assistant .message-content {
-      width: 100%;
-      padding-right: 16px;
-    }
-
-    .message-content p { margin: 0 0 16px 0; }
-    .message-content p:last-child { margin: 0; }
-
-    .inline-preview-image {
-      max-width: 100%;
-      max-height: 400px;
-      border-radius: 12px;
-      margin-top: 8px;
-      object-fit: contain;
-    }
-
-    .thought-block {
-      background: transparent;
-      border-left: 2px solid var(--border);
-      padding-left: 14px;
-      margin-bottom: 16px;
-      font-size: 14px;
-      color: var(--muted);
-    }
-
-    .thought-block summary {
-      cursor: pointer;
-      user-select: none;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      outline: none;
-    }
-
-    .thought-block summary::-webkit-details-marker { display: none; }
-    .thought-block summary::before {
-      content: '▶';
-      font-size: 10px;
-      transition: transform 0.2s;
-    }
-
-    .thought-block[open] summary::before { transform: rotate(90deg); }
-    .thought-content { margin-top: 12px; }
-
-    .code-block {
-      position: relative;
-      margin: 16px 0;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #0d1117;
-    }
-
-    .code-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #161b22;
-      padding: 6px 12px;
-      font-size: 12px;
-      color: #8b949e;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-
-    .copy-btn {
-      background: transparent;
-      border: none;
-      color: #8b949e;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      transition: color 0.2s;
-    }
-
-    .copy-btn:hover { color: #fff; }
-
-    .code-block pre {
-      margin: 0;
-      padding: 16px;
-      overflow-x: auto;
-      color: #c9d1d9;
-      font-size: 14px;
-    }
-
-    .input-container {
-      flex-shrink: 0;
-      width: 100%;
-      background: var(--bg);
-      border-top: 1px solid var(--border);
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) 16px;
-      z-index: 100;
-    }
-    
-    .input-wrapper-inner {
-      max-width: 800px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .selected-image-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      background: var(--panel);
-      border-radius: 12px;
-      margin-bottom: 8px;
-      border: 1px solid var(--border);
-    }
-
-    .selected-image-bar img {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      object-fit: cover;
-    }
-
-    .image-info { flex: 1; }
-    .image-info span { display: block; font-size: 14px; }
-    
-    .input-form {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 6px 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-
-    [data-theme="light"] .input-form {
-      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    }
-
-    .btn-icon {
-      background: transparent;
-      border: none;
-      color: var(--muted);
-      font-size: 20px;
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      border-radius: 50%;
-    }
-
-    .btn-icon:hover {
-      background: var(--panel-hover);
-      color: var(--text);
-    }
-    
-    .input-form textarea {
-      flex: 1;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 15px;
-      resize: none;
-      padding: 8px 0;
-      max-height: 150px;
-      outline: none;
-    }
-
-    .input-form textarea::placeholder { color: var(--muted); }
-
-    .send-btn {
-      background: var(--text);
-      color: var(--bg);
-      border: none;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      margin-bottom: 2px;
-    }
-
-    .send-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-
-    .hidden { display: none !important; }
-
-    .mobile-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 1500;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s;
-    }
-
-    .mobile-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    @media (max-width: 768px) {
-      .sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        height: 100%;
-        transform: translateX(-100%);
-        box-shadow: 4px 0 24px rgba(0,0,0,0.5);
-      }
-      .sidebar.open { transform: translateX(0); }
-      .hamburger-btn { display: block; }
-      .message-wrapper.user .message-content { max-width: 92%; }
-      .chat-item-delete { display: block; }
-    }
-  </style>
+  <link rel="stylesheet" href="/style.css?v=20">
 </head>
 <body>
-  <div class="mobile-overlay" id="mobileOverlay"></div>
+  <div class="overlay" id="overlay"></div>
 
-  <div class="app-container">
+  <div class="layout">
+    <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <button type="button" class="btn-new-chat" id="newChatBtn">
-          <span>Новий чат</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <div class="sidebar-top">
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="28" height="28" rx="8" fill="currentColor" opacity="0.1"/>
+            <path d="M7 14C7 10.134 10.134 7 14 7C17.866 7 21 10.134 21 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M7 14C7 17.866 10.134 21 14 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2" fill="currentColor"/>
+          </svg>
+          <span class="brand-name">AI Chat</span>
+        </div>
+        <button type="button" class="icon-btn" id="themeToggleBtn" title="Змінити тему" aria-label="Змінити тему">
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
         </button>
-        <button type="button" class="theme-btn" id="themeToggleBtn">☀️</button>
       </div>
 
-      <div class="chat-list" id="chatList"></div>
+      <button type="button" class="new-chat-btn" id="newChatBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Новий чат
+      </button>
 
-      <div class="sidebar-footer">
+      <div class="chat-list-label">Історія</div>
+      <div class="chat-list" id="chatList">
+        <div class="chat-list-empty">Немає чатів</div>
+      </div>
+
+      <div class="sidebar-bottom">
         <div id="authLoggedOut">
-          <button type="button" class="btn" id="googleLoginBtn">Увійти (Google)</button>
+          <button type="button" class="auth-btn" id="googleLoginBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Увійти через Google
+          </button>
         </div>
         <div id="authLoggedIn" class="hidden">
-          <div class="user-info">
-            <img id="userAvatar" src="https://placehold.co/40x40/png" alt="Avatar">
-            <div class="user-details">
-              <div id="userName" class="user-name">Користувач</div>
-              <div id="userEmail" class="user-email">email@example.com</div>
+          <div class="user-card">
+            <img id="userAvatar" src="" alt="" width="32" height="32">
+            <div class="user-card-info">
+              <div id="userName" class="user-card-name">Користувач</div>
+              <div id="userEmail" class="user-card-email">email@example.com</div>
             </div>
           </div>
-          <button type="button" class="btn danger" id="logoutBtn">Вийти</button>
+          <button type="button" class="logout-btn" id="logoutBtn">Вийти</button>
         </div>
       </div>
     </aside>
 
-    <main class="main-content">
+    <!-- MAIN -->
+    <main class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <button type="button" class="hamburger-btn" id="hamburgerBtn">☰</button>
-          <select id="model" class="model-select">
-            <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
-            <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash (+Фото)</option>
-            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B</option>
-            <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B</option>
-            <option value="google/gemma-3-27b-it">Gemma 3 (+Фото)</option>
-            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision (+Фото)</option>
-          </select>
-          <span class="status-indicator hidden" id="statusText">Готово</span>
-        </div>
-        <button type="button" class="btn-icon" id="clearBtn" title="Очистити чат" style="width: 32px; height: 32px; color: var(--danger-text);">🗑️</button>
-      </header>
+          <button type="button" class="icon-btn hamburger" id="hamburgerBtn" aria-label="Меню">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
 
-      <div class="chat-container" id="chat">
-        <div class="chat-empty">Чим можу допомогти?</div>
-      </div>
-
-      <div class="input-container">
-        <div class="input-wrapper-inner">
-          <div class="selected-image-bar hidden" id="selectedImageBar">
-            <img id="selectedImagePreview" src="" alt="preview">
-            <div class="image-info"><span id="selectedImageName">image.jpg</span></div>
-            <button type="button" class="btn-icon" id="removeImageBtn" style="color: var(--danger-text);">✕</button>
+          <div class="model-picker">
+            <select id="model" class="model-select" aria-label="Вибір моделі">
+              <optgroup label="⚡ Groq — швидко">
+                <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                <option value="groq/llama-3.1-8b-instant">Llama 3.1 8B (миттєво)</option>
+                <option value="groq/llama-3.2-11b-vision-preview">Llama 3.2 11B Vision 📷</option>
+              </optgroup>
+              <optgroup label="✦ Cerebras — найшвидше">
+                <option value="cerebras/llama-3.3-70b">Llama 3.3 70B (Cerebras)</option>
+                <option value="cerebras/llama-3.1-8b">Llama 3.1 8B (Cerebras)</option>
+              </optgroup>
+              <optgroup label="◆ Google Gemini">
+                <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash 📷</option>
+                <option value="gemini/gemini-2.5-pro">Gemini 2.5 Pro 📷</option>
+              </optgroup>
+              <optgroup label="○ Microsoft / GitHub">
+                <option value="github/gpt-4o">GPT-4o 📷</option>
+                <option value="github/o4-mini">o4-mini</option>
+                <option value="github/phi-4">Phi-4</option>
+              </optgroup>
+              <optgroup label="▲ Mistral">
+                <option value="mistral/mistral-large-latest">Mistral Large</option>
+                <option value="mistral/mistral-small-latest">Mistral Small</option>
+                <option value="mistral/codestral-latest">Codestral (код)</option>
+              </optgroup>
+              <optgroup label="◉ NVIDIA">
+                <option value="nvidia/llama-3.3-70b-instruct">Llama 3.3 70B (NVIDIA)</option>
+                <option value="nvidia/llama-3.2-90b-vision">Llama 3.2 90B Vision 📷</option>
+                <option value="nvidia/gemma-3-27b">Gemma 3 27B 📷</option>
+              </optgroup>
+              <optgroup label="◈ OpenRouter">
+                <option value="openrouter/deepseek-r1">DeepSeek R1</option>
+                <option value="openrouter/qwen-2.5-72b">Qwen 2.5 72B</option>
+              </optgroup>
+            </select>
+            <svg class="model-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
 
-          <form id="chatForm" class="input-form">
-            <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp" class="hidden">
-            <button type="button" class="btn-icon" id="imageBtn">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          <span class="status-dot" id="statusDot"></span>
+          <span class="status-text hidden" id="statusText">Генерація...</span>
+        </div>
+
+        <div class="topbar-right">
+          <button type="button" class="icon-btn" id="clearBtn" title="Очистити чат" aria-label="Очистити чат">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="chat-area" id="chat">
+        <div class="chat-empty" id="chatEmpty">
+          <svg class="chat-empty-icon" viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="1.5" opacity="0.2"/>
+            <path d="M16 24C16 19.582 19.582 16 24 16C28.418 16 32 19.582 32 24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M16 24C16 28.418 19.582 32 24 32" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+            <circle cx="24" cy="24" r="3" fill="currentColor"/>
+          </svg>
+          <h2 class="chat-empty-title">Чим можу допомогти?</h2>
+          <p class="chat-empty-sub">Обери модель вгорі та напиши запит</p>
+
+          <div class="suggestions">
+            <button class="suggestion-chip" data-text="Напиши функцію на JavaScript для сортування масиву обʼєктів">Сортування масиву JS</button>
+            <button class="suggestion-chip" data-text="Поясни як працює async/await в JavaScript">async/await</button>
+            <button class="suggestion-chip" data-text="Що таке Docker і як ним користуватись?">Що таке Docker?</button>
+            <button class="suggestion-chip" data-text="Напиши SQL запит для вибірки топ 10 записів">SQL запит</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrap">
+          <div class="image-preview-bar hidden" id="selectedImageBar">
+            <img id="selectedImagePreview" src="" alt="preview" width="40" height="40">
+            <span id="selectedImageName" class="image-preview-name">image.jpg</span>
+            <button type="button" class="icon-btn small" id="removeImageBtn" aria-label="Видалити фото">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
-            <textarea id="prompt" placeholder="Напиши повідомлення..." rows="1"></textarea>
-            <button type="button" class="btn-icon hidden" id="stopBtn" style="color: var(--danger-text);">⏹</button>
-            <button type="submit" class="send-btn" id="sendBtn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </div>
+
+          <form id="chatForm" class="input-box">
+            <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" class="sr-only">
+            <button type="button" class="icon-btn input-attach" id="imageBtn" title="Прикріпити фото" aria-label="Прикріпити фото">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </button>
+            <textarea id="prompt" placeholder="Напиши повідомлення..." rows="1" aria-label="Повідомлення"></textarea>
+            <button type="button" class="stop-btn hidden" id="stopBtn" aria-label="Зупинити">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            </button>
+            <button type="submit" class="send-btn" id="sendBtn" aria-label="Надіслати">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </form>
+
+          <div class="input-footer">
+            <span class="input-hint">Enter — надіслати &nbsp;·&nbsp; Shift+Enter — новий рядок</span>
+          </div>
         </div>
       </div>
     </main>
   </div>
 
-  <script src="/app.js?v=12"></script>
+  <script src="/app.js?v=20"></script>
 </body>
 </html>
