@@ -35,7 +35,9 @@ export default {
       }
 
       const userId = getUserId(request);
-      if (!userId) {
+      const publicRoutes = new Set(["/api/health"]);
+
+      if (!publicRoutes.has(url.pathname) && !userId) {
         return json(request, { error: "Missing X-User-Id header", reqId }, 401);
       }
 
@@ -44,6 +46,7 @@ export default {
           SELECT
             c.id,
             c.title,
+            c.model,
             c.created_at,
             c.updated_at,
             (
@@ -76,7 +79,7 @@ export default {
           request,
           {
             chat: {
-              id: result.meta.last_row_id,
+              id: result.meta?.last_row_id ?? null,
               title,
               model,
               created_at: now,
@@ -127,7 +130,8 @@ export default {
 
         const attachMap = new Map();
         for (const row of attachmentRows || []) {
-          const list = attachMap.get(String(row.message_id)) || [];
+          const key = String(row.message_id);
+          const list = attachMap.get(key) || [];
           list.push({
             id: row.id,
             kind: row.kind,
@@ -137,7 +141,7 @@ export default {
             created_at: row.created_at,
             url: fileUrlFor(env, row.r2_key)
           });
-          attachMap.set(String(row.message_id), list);
+          attachMap.set(key, list);
         }
 
         const messages = (messageRows || []).map((row) => ({
@@ -181,11 +185,15 @@ export default {
         }
 
         const { results: attached } = await env.DB.prepare(`
-          SELECT r2_key FROM attachments WHERE chat_id = ?
+          SELECT r2_key
+          FROM attachments
+          WHERE chat_id = ?
         `).bind(chatId).all();
 
         for (const row of attached || []) {
-          if (row.r2_key) await env.FILES.delete(row.r2_key);
+          if (row.r2_key) {
+            await env.FILES.delete(row.r2_key);
+          }
         }
 
         await env.DB.prepare(`
@@ -215,7 +223,7 @@ export default {
         }
 
         const body = await request.json().catch(() => ({}));
-        const role = String(body?.role || "user");
+        const role = String(body?.role || "user").slice(0, 20);
         const content = String(body?.content || "");
         const model = String(body?.model || "auto").slice(0, 120);
         const attachments = Array.isArray(body?.attachments) ? body.attachments : [];
@@ -226,7 +234,7 @@ export default {
           VALUES (?, ?, ?, ?, ?)
         `).bind(chatId, role, content, model, now).run();
 
-        const messageId = insertResult.meta.last_row_id;
+        const messageId = insertResult.meta?.last_row_id ?? null;
 
         for (const attachmentId of attachments) {
           await env.DB.prepare(`
@@ -326,7 +334,7 @@ export default {
           request,
           {
             attachment: {
-              id: insert.meta.last_row_id,
+              id: insert.meta?.last_row_id ?? null,
               kind: "image",
               r2_key: key,
               file_name: safeName,
@@ -379,8 +387,11 @@ function getUserId(request) {
 }
 
 function getExtension(fileName, mimeType) {
-  const fromName = String(fileName || "").split(".").pop()?.toLowerCase();
-  if (fromName && fromName !== fileName) return fromName;
+  const fromName = String(fileName || "").includes(".")
+    ? String(fileName).split(".").pop()?.toLowerCase()
+    : "";
+
+  if (fromName) return fromName;
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
   if (mimeType === "image/gif") return "gif";
@@ -405,18 +416,19 @@ function fileUrlFor(env, key) {
 
 function buildCorsHeaders(request) {
   const origin = request.headers.get("Origin");
+
   const allowedOrigins = [
+    "https://ai-beta-by.vercel.app",
+    "https://ai1.ai-beta69690.workers.dev",
     "http://localhost:3000",
     "http://localhost:5173",
-    "http://localhost:4173",
-    "https://ai1.ai-beta69690.workers.dev"
-    // СЮДИ ДОДАЙ СВІЙ VERCEL DOMAIN:
-    // "https://ai-beta-by.vercel.app/",
-    // "https://your-custom-domain.com"
+    "http://localhost:4173"
   ];
 
   const allowOrigin =
-    origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    origin && allowedOrigins.includes(origin)
+      ? origin
+      : "https://ai-beta-by.vercel.app";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
