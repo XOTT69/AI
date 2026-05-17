@@ -1,150 +1,618 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="uk" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-  />
-  <title>AI Workspace</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Chat</title>
 
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="AI workspace with chat history, multimodal models, sync and clean Vercel deployment." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/style.css?v=next" />
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/common.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root, [data-theme="light"] {
+      --bg: #f7f6f2;
+      --surface: #fbfbf9;
+      --surface-2: #f1efe9;
+      --surface-3: #e9e5dc;
+      --text: #1f1d18;
+      --muted: #706d66;
+      --border: rgba(31, 29, 24, 0.12);
+      --primary: #0b6b72;
+      --primary-hover: #09575d;
+      --danger: #b42318;
+      --danger-bg: rgba(180, 35, 24, 0.08);
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #111111;
+      --surface: #171717;
+      --surface-2: #1d1d1d;
+      --surface-3: #252525;
+      --text: #f5f5f0;
+      --muted: #a1a19a;
+      --border: rgba(255,255,255,0.10);
+      --primary: #47aab1;
+      --primary-hover: #67bcc2;
+      --danger: #f97066;
+      --danger-bg: rgba(249, 112, 102, 0.12);
+      --shadow: 0 12px 40px rgba(0,0,0,0.35);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    body.no-scroll { overflow: hidden; }
+
+    button, input, select, textarea { font: inherit; }
+    img { max-width: 100%; display: block; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .icon-btn {
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      border-radius: 12px;
+      min-width: 42px;
+      height: 42px;
+      cursor: pointer;
+    }
+
+    .primary-btn, .secondary-btn {
+      border: 0;
+      border-radius: 14px;
+      min-height: 46px;
+      padding: 0 16px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .primary-btn {
+      background: var(--primary);
+      color: white;
+    }
+
+    .primary-btn:hover { background: var(--primary-hover); }
+
+    .secondary-btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .auth-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .hidden { display: none !important; }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .user-row img {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+
+    .user-meta {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .user-name {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .user-email {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-list {
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      padding-right: 4px;
+    }
+
+    .chat-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      cursor: pointer;
+    }
+
+    .chat-item.active {
+      border-color: rgba(71,170,177,0.5);
+      background: color-mix(in srgb, var(--primary) 10%, var(--surface-2));
+    }
+
+    .chat-item-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .chat-item-title {
+      font-weight: 700;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-item-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .chat-item-delete {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+
+    .chat-item-delete:hover {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .topbar-left, .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mobile-only { display: none; }
+
+    .title-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .title-stack h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.1;
+    }
+
+    .title-stack p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .model-select {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 12px;
+      min-height: 42px;
+      padding: 0 12px;
+      min-width: 220px;
+    }
+
+    .chat-area {
+      overflow: auto;
+      padding: 28px 20px 140px;
+    }
+
+    .chat-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .chat-empty {
+      min-height: 50vh;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .message-wrapper {
+      display: flex;
+    }
+
+    .message-wrapper.user {
+      justify-content: flex-end;
+    }
+
+    .message-wrapper.assistant {
+      justify-content: flex-start;
+    }
+
+    .message-content {
+      max-width: min(100%, 760px);
+      border-radius: 22px;
+      padding: 16px 18px;
+      line-height: 1.65;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      word-break: break-word;
+    }
+
+    .message-wrapper.user .message-content {
+      background: var(--primary);
+      color: white;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .message-wrapper.assistant .message-content {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .message-content p:first-child { margin-top: 0; }
+    .message-content p:last-child { margin-bottom: 0; }
+    .message-content pre {
+      overflow: auto;
+      padding: 14px;
+      border-radius: 14px;
+      background: #0d1117;
+    }
+    .message-content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .message-content ul, .message-content ol { padding-left: 20px; }
+
+    .inline-preview-image {
+      margin-top: 12px;
+      max-width: 280px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+
+    .error-card {
+      background: var(--danger-bg);
+      color: var(--text);
+      border: 1px solid rgba(249,112,102,0.25);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .error-actions {
+      margin-top: 10px;
+    }
+
+    .composer-wrap {
+      position: sticky;
+      bottom: 0;
+      background: linear-gradient(to top, var(--bg), color-mix(in srgb, var(--bg) 30%, transparent));
+      padding: 12px 20px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .composer {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .selected-image-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 8px 12px;
+    }
+
+    .selected-image-bar img {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .selected-image-meta {
+      min-width: 0;
+      flex: 1;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .composer-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    .composer textarea {
+      flex: 1;
+      border: 0;
+      outline: none;
+      resize: none;
+      background: transparent;
+      color: var(--text);
+      padding: 10px 8px;
+      min-height: 52px;
+      max-height: 180px;
+      line-height: 1.5;
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-text {
+      max-width: 900px;
+      margin: 8px auto 0;
+      color: var(--muted);
+      font-size: 13px;
+      padding-left: 4px;
+    }
+
+    .mobile-overlay {
+      display: none;
+    }
+
+    .thought-block {
+      margin: 10px 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .thought-block summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      background: var(--surface-2);
+      font-weight: 600;
+    }
+
+    .thought-content {
+      padding: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(88vw, 340px);
+        transform: translateX(-100%);
+        transition: transform .2s ease;
+        z-index: 50;
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .mobile-overlay.show {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 40;
+      }
+
+      .mobile-only {
+        display: inline-flex;
+      }
+
+      .topbar {
+        padding: 12px 14px;
+      }
+
+      .chat-area {
+        padding: 18px 12px 132px;
+      }
+
+      .composer-wrap {
+        padding: 10px 12px 14px;
+      }
+
+      .model-select {
+        min-width: 150px;
+        max-width: 160px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div id="mobileOverlay" class="mobile-overlay"></div>
-
-  <div class="app-shell">
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-top">
-        <div class="brand-row">
-          <button id="hamburgerCloseBtn" class="icon-btn mobile-only" type="button" aria-label="Закрити меню">✕</button>
-          <div class="brand-mark">AI</div>
-          <div class="brand-copy">
-            <strong>AI Workspace</strong>
-            <span>Vercel + Sync</span>
-          </div>
-        </div>
-
-        <button id="newChatBtn" class="primary-btn" type="button">
-          <span>Новий чат</span>
-          <span>+</span>
-        </button>
-
-        <label class="search-box" for="chatSearch">
-          <span>⌕</span>
-          <input id="chatSearch" type="text" placeholder="Пошук по чатах" />
-        </label>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-title">AI Chat</div>
+        <button id="themeToggleBtn" class="icon-btn" title="Theme">☀️</button>
       </div>
 
-      <div class="sidebar-section-label">Чати</div>
-      <div id="chatList" class="chat-list"></div>
+      <button id="newChatBtn" class="primary-btn">Новий чат</button>
 
-      <div class="sidebar-bottom">
-        <div id="authLoggedOut" class="auth-card">
-          <p>Увійди через Google, щоб зберігати історію в хмарі.</p>
-          <button id="googleLoginBtn" class="secondary-btn" type="button">Увійти через Google</button>
+      <div class="auth-card">
+        <div id="authLoggedOut">
+          <button id="googleLoginBtn" class="secondary-btn" style="width:100%;">Увійти через Google</button>
         </div>
 
-        <div id="authLoggedIn" class="auth-card hidden">
+        <div id="authLoggedIn" class="hidden">
           <div class="user-row">
-            <img id="userAvatar" alt="Avatar" />
+            <img id="userAvatar" alt="avatar" />
             <div class="user-meta">
-              <strong id="userName">Користувач</strong>
-              <span id="userEmail"></span>
+              <div class="user-name" id="userName">User</div>
+              <div class="user-email" id="userEmail"></div>
             </div>
           </div>
-          <div class="account-actions">
-            <button id="settingsBtn" class="ghost-btn" type="button">Налаштування</button>
-            <button id="logoutBtn" class="ghost-btn danger" type="button">Вийти</button>
+          <div style="margin-top:12px;">
+            <button id="logoutBtn" class="secondary-btn" style="width:100%;">Вийти</button>
           </div>
         </div>
       </div>
+
+      <div class="chat-list" id="chatList"></div>
     </aside>
 
-    <main class="workspace">
+    <div class="mobile-overlay" id="mobileOverlay"></div>
+
+    <main class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="hamburgerBtn" class="icon-btn mobile-only" type="button" aria-label="Відкрити меню">☰</button>
-          <div class="topbar-title">
-            <h1 id="chatTitle">AI Workspace</h1>
-            <span id="statusText" class="status-text hidden">Готово</span>
+          <button id="hamburgerBtn" class="icon-btn mobile-only" title="Menu">☰</button>
+          <div class="title-stack">
+            <h1>AI Chat</h1>
+            <p>Auto routing + history + images</p>
           </div>
         </div>
 
-        <div class="topbar-actions">
+        <div class="topbar-right">
           <select id="model" class="model-select">
-            <optgroup label="Fast">
-              <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B · Groq</option>
-              <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="cerebras/llama-3.3-70b">Llama 3.3 70B · Cerebras</option>
-            </optgroup>
-            <optgroup label="Best">
-              <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B</option>
-              <option value="mistral/mistral-large-latest">Mistral Large</option>
-              <option value="github/gpt-4o-mini">GPT-4o mini · GitHub</option>
-            </optgroup>
-            <optgroup label="Reasoning / Coding">
-              <option value="qwen/qwen3.5-122b-a10b">Qwen 3.5 122B</option>
-              <option value="github/phi-4">Phi-4 · GitHub</option>
-              <option value="mistral/codestral-latest">Codestral</option>
-            </optgroup>
-            <optgroup label="Vision">
-              <option value="google/gemma-3-27b-it">Gemma 3 27B</option>
-              <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
-            </optgroup>
+            <option value="auto" selected>Auto</option>
+            <option value="github/gpt-4o-mini">GPT-4o mini · GitHub</option>
+            <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B · Groq</option>
+            <option value="gemini/gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="mistral/codestral">Codestral · Mistral</option>
+            <option value="mistral/mistral-large">Mistral Large</option>
+            <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
+            <option value="google/gemma-3-27b-it">Gemma 3 27B IT</option>
+            <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
+            <option value="cerebras/llama-3.1-70b">Llama 3.1 70B · Cerebras</option>
+            <option value="github/phi-4">Phi-4 · GitHub</option>
           </select>
 
-          <button id="themeToggleBtn" class="icon-btn" type="button" aria-label="Змінити тему">☀️</button>
-          <button id="clearBtn" class="icon-btn danger" type="button" aria-label="Очистити чат">⌫</button>
+          <button id="clearBtn" class="secondary-btn">Очистити</button>
         </div>
       </header>
 
-      <section id="chat" class="chat-feed" aria-live="polite">
-        <div class="chat-empty">
-          <h2>Готовий до роботи</h2>
-          <p>Пиши запит, додавай фото, перемикай моделі та зберігай історію.</p>
+      <section class="chat-area" id="chat">
+        <div class="chat-inner">
+          <div class="chat-empty">Що хочеш дізнатись?</div>
         </div>
       </section>
 
-      <section class="composer-shell">
-        <div id="selectedImageBar" class="selected-image-bar hidden">
-          <img id="selectedImagePreview" alt="Preview" />
-          <div class="selected-image-meta">
-            <strong id="selectedImageName">image.jpg</strong>
-            <span>Зображення буде надіслано разом із повідомленням</span>
-          </div>
-          <button id="removeImageBtn" class="icon-btn danger" type="button" aria-label="Прибрати зображення">✕</button>
-        </div>
-
+      <div class="composer-wrap">
         <form id="chatForm" class="composer">
-          <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
+          <input id="imageInput" type="file" accept="image/*" hidden />
 
-          <button id="imageBtn" class="icon-btn" type="button" aria-label="Додати зображення">＋</button>
+          <div id="selectedImageBar" class="selected-image-bar hidden">
+            <img id="selectedImagePreview" alt="selected image preview" />
+            <div class="selected-image-meta">
+              <div id="selectedImageName">image</div>
+            </div>
+            <button type="button" id="removeImageBtn" class="secondary-btn">Прибрати</button>
+          </div>
 
-          <textarea
-            id="prompt"
-            rows="1"
-            placeholder="Напиши повідомлення…"
-            autocomplete="off"
-          ></textarea>
-
-          <button id="stopBtn" class="icon-btn danger hidden" type="button" aria-label="Зупинити генерацію">■</button>
-          <button id="sendBtn" class="send-btn" type="submit" aria-label="Надіслати">➤</button>
+          <div class="composer-row">
+            <button type="button" id="imageBtn" class="icon-btn" title="Image">＋</button>
+            <textarea id="prompt" placeholder="Напиши повідомлення..." rows="1"></textarea>
+            <div class="composer-actions">
+              <button type="button" id="stopBtn" class="secondary-btn hidden">Стоп</button>
+              <button type="submit" id="sendBtn" class="primary-btn">Надіслати</button>
+            </div>
+          </div>
         </form>
-      </section>
+
+        <div id="statusText" class="status-text hidden"></div>
+      </div>
     </main>
   </div>
 
-  <script src="/app.js?v=next"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
