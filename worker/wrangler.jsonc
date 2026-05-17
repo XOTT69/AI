@@ -4,11 +4,12 @@
   "main": "worker.js",
   "compatibility_date": "2026-05-17",
   "workers_dev": true,
-
+  "observability": {
+    "enabled": true
+  },
   "vars": {
     "WORKER_PUBLIC_URL": "https://ai1.ai-beta69690.workers.dev"
   },
-
   "d1_databases": [
     {
       "binding": "DB",
@@ -16,14 +17,12 @@
       "database_id": "ccead4a8-b66f-4c1b-bee9-3032f9fd3dfc"
     }
   ],
-
   "r2_buckets": [
     {
       "binding": "FILES",
       "bucket_name": "files"
     }
   ],
-
   "ai": {
     "binding": "AI"
   }
