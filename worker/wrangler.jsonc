@@ -3,17 +3,12 @@
   "name": "ai1",
   "main": "worker.js",
   "compatibility_date": "2026-05-17",
-
-  // Якщо використовуєш workers.dev route:
   "workers_dev": true,
 
-  // Простi env vars, не secrets
   "vars": {
-    "WORKER_PUBLIC_URL": "https://ai1.ai-beta69690.workers.dev",
-    "R2_PUBLIC_URL": ""
+    "WORKER_PUBLIC_URL": "https://ai1.ai-beta69690.workers.dev"
   },
 
-  // D1 binding
   "d1_databases": [
     {
       "binding": "DB",
@@ -22,7 +17,6 @@
     }
   ],
 
-  // R2 binding
   "r2_buckets": [
     {
       "binding": "FILES",
@@ -30,17 +24,7 @@
     }
   ],
 
-  // Workers AI binding
   "ai": {
     "binding": "AI"
   }
-
-  // Secrets додаються окремо командами:
-  // wrangler secret put GEMINI_API_KEY
-  // wrangler secret put GROQ_API_KEY
-  // wrangler secret put OPENROUTER_API_KEY
-  // wrangler secret put NVIDIA_API_KEY
-  // wrangler secret put MISTRAL_API_KEY
-  // wrangler secret put CEREBRAS_API_KEY
-  // wrangler secret put GITHUB_MODELS_TOKEN
 }
