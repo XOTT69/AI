@@ -29,8 +29,7 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-
-const STORAGE_KEY = "ai-chat-worker-v1";
+const STORAGE_KEY = "ai-chat-worker-v2";
 
 const ALLOWED_MODELS = {
   "groq/llama-3.3-70b-versatile": {
@@ -140,8 +139,12 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function getChatKey(chatItem) {
+  return chatItem?.id || chatItem?.localId || null;
+}
+
 function getActiveChat() {
-  return state.chats.find((c) => c.id === state.activeChatId) || null;
+  return state.chats.find((c) => getChatKey(c) === state.activeChatId) || null;
 }
 
 function ensureLocalChatStub() {
@@ -156,19 +159,10 @@ function ensureLocalChatStub() {
       updatedAt: Date.now()
     };
     state.chats.unshift(active);
-    state.activeChatId = active.localId;
+    state.activeChatId = getChatKey(active);
     saveState();
   }
   return active;
-}
-
-function getChatKey(chatItem) {
-  return chatItem.id || chatItem.localId;
-}
-
-function setActiveChatByAnyId(id) {
-  const found = state.chats.find((c) => c.id === id || c.localId === id);
-  if (found) state.activeChatId = getChatKey(found);
 }
 
 function applyTheme() {
@@ -222,13 +216,11 @@ function renderChatList() {
       if (!confirm("Видалити цей чат?")) return;
 
       if (item.id && currentUser) {
-        await historyApi(`/api/chats/${item.id}`, {
-          method: "DELETE"
-        }).catch(console.error);
+        await historyApi(`/api/chats/${item.id}`, { method: "DELETE" }).catch(console.error);
       }
 
       state.chats = state.chats.filter((c) => getChatKey(c) !== getChatKey(item));
-      state.activeChatId = getChatKey(state.chats[0] || {}) || null;
+      state.activeChatId = getChatKey(state.chats[0]) || null;
       saveState();
       renderAll();
     };
@@ -376,7 +368,6 @@ async function historyApi(path, options = {}) {
   });
 
   const data = await response.json().catch(() => ({}));
-
   if (!response.ok) {
     throw new Error(data?.error || `History API error ${response.status}`);
   }
@@ -389,6 +380,7 @@ async function loadChatsFromWorker() {
 
   try {
     const data = await historyApi("/api/chats");
+
     state.chats = (data.chats || []).map((chatItem) => ({
       id: chatItem.id,
       localId: chatItem.id,
@@ -400,7 +392,7 @@ async function loadChatsFromWorker() {
     }));
 
     if (!state.activeChatId || !state.chats.find((c) => getChatKey(c) === state.activeChatId)) {
-      state.activeChatId = getChatKey(state.chats[0] || {}) || null;
+      state.activeChatId = getChatKey(state.chats[0]) || null;
     }
 
     saveState();
@@ -689,7 +681,8 @@ async function sendChatMessage(text, isRetry = false) {
       body: JSON.stringify({
         chatId: active.id,
         messageId: assistantMsg.id,
-        content: assistantMsg.content
+        content: assistantMsg.content,
+        isError: false
       })
     });
 
@@ -725,7 +718,8 @@ async function sendChatMessage(text, isRetry = false) {
           body: JSON.stringify({
             chatId: active.id,
             messageId: errorMsg.id,
-            content: errorMsg.content
+            content: errorMsg.content,
+            isError: true
           })
         }).catch(() => {});
       }
@@ -778,9 +772,21 @@ clearBtn?.addEventListener("click", async () => {
   if (!active) return;
   if (!confirm("Очистити поточний чат?")) return;
 
-  active.messages = [];
-  active.title = "Новий чат";
-  active.updatedAt = Date.now();
+  if (active.id && currentUser) {
+    await historyApi(`/api/chats/${active.id}`, { method: "DELETE" }).catch(console.error);
+  }
+
+  const newLocalChat = {
+    id: null,
+    localId: uid(),
+    title: "Новий чат",
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  state.chats = [newLocalChat, ...state.chats.filter((c) => getChatKey(c) !== getChatKey(active))];
+  state.activeChatId = newLocalChat.localId;
   saveState();
   renderAll();
 });
@@ -835,6 +841,24 @@ removeImageBtn?.addEventListener("click", () => {
   clearSelectedImage();
 });
 
+googleLoginBtn?.addEventListener("click", async () => {
+  if (!sb) return;
+  await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin
+    }
+  });
+});
+
+logoutBtn?.addEventListener("click", async () => {
+  if (!sb) return;
+  await sb.auth.signOut();
+  currentUser = null;
+  hasLoadedChats = false;
+  renderAuthState();
+});
+
 sb?.auth.onAuthStateChange(async (_event, session) => {
   currentUser = session?.user || null;
   hasLoadedChats = false;
@@ -855,24 +879,6 @@ sb?.auth.getSession()
     }
   })
   .catch(() => {});
-
-googleLoginBtn?.addEventListener("click", async () => {
-  if (!sb) return;
-  await sb.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: window.location.origin
-    }
-  });
-});
-
-logoutBtn?.addEventListener("click", async () => {
-  if (!sb) return;
-  await sb.auth.signOut();
-  currentUser = null;
-  hasLoadedChats = false;
-  renderAuthState();
-});
 
 applyTheme();
 renderAll();
