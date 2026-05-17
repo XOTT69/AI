@@ -26,7 +26,8 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("proxy error:", error);
     return res.status(500).json({
-      error: error.message || "Proxy server error"
+      error: error.message || "Proxy server error",
+      stack: process.env.NODE_ENV === "production" ? undefined : error.stack
     });
   }
 }
@@ -43,10 +44,7 @@ function normalizeMessages(messages) {
             if (!part || typeof part !== "object") return null;
 
             if (part.type === "text") {
-              return {
-                type: "text",
-                text: String(part.text || "")
-              };
+              return { type: "text", text: String(part.text || "") };
             }
 
             if (part.type === "image_url") {
@@ -54,13 +52,8 @@ function normalizeMessages(messages) {
                 typeof part.image_url === "string"
                   ? part.image_url
                   : part.image_url?.url;
-
               if (!url) return null;
-
-              return {
-                type: "image_url",
-                image_url: { url: String(url) }
-              };
+              return { type: "image_url", image_url: { url: String(url) } };
             }
 
             return null;
@@ -70,10 +63,7 @@ function normalizeMessages(messages) {
         return { role, content: normalizedContent };
       }
 
-      return {
-        role,
-        content: String(m.content || "")
-      };
+      return { role, content: String(m.content || "") };
     });
 }
 
@@ -82,18 +72,27 @@ async function routeAndGenerate({ model, messages, maxTokens, env }) {
     return autoRoute({ messages, maxTokens, env });
   }
 
-  const direct = await tryDirectProvider({ model, messages, maxTokens, env });
-  if (direct) return direct;
+  const providerErrors = [];
 
-  const fallback = await tryOpenRouterFallback({ model, messages, maxTokens, env });
-  if (fallback) return fallback;
+  try {
+    const direct = await tryDirectProvider({ model, messages, maxTokens, env });
+    if (direct) return { ...direct, providerErrors };
+  } catch (err) {
+    providerErrors.push(`direct ${model}: ${err.message}`);
+  }
 
-  throw new Error(`No available provider for model: ${model}`);
+  try {
+    const fallback = await tryOpenRouterFallback({ model, messages, maxTokens, env });
+    if (fallback) return { ...fallback, providerErrors };
+  } catch (err) {
+    providerErrors.push(`openrouter ${model}: ${err.message}`);
+  }
+
+  throw new Error(providerErrors.join(" | ") || `No available provider for model: ${model}`);
 }
 
 async function autoRoute({ messages, maxTokens, env }) {
   const hasImage = containsImage(messages);
-
   const candidates = hasImage
     ? [
         "gemini/gemini-2.5-flash",
@@ -109,33 +108,25 @@ async function autoRoute({ messages, maxTokens, env }) {
         "github/phi-4"
       ];
 
+  const providerErrors = [];
+
   for (const candidate of candidates) {
     try {
-      const result = await tryDirectProvider({
-        model: candidate,
-        messages,
-        maxTokens,
-        env
-      });
-      if (result) return result;
+      const direct = await tryDirectProvider({ model: candidate, messages, maxTokens, env });
+      if (direct) return { ...direct, providerErrors };
     } catch (err) {
-      console.warn("auto direct fail:", candidate, err.message);
+      providerErrors.push(`direct ${candidate}: ${err.message}`);
     }
 
     try {
-      const result = await tryOpenRouterFallback({
-        model: candidate,
-        messages,
-        maxTokens,
-        env
-      });
-      if (result) return result;
+      const fallback = await tryOpenRouterFallback({ model: candidate, messages, maxTokens, env });
+      if (fallback) return { ...fallback, providerErrors };
     } catch (err) {
-      console.warn("auto fallback fail:", candidate, err.message);
+      providerErrors.push(`openrouter ${candidate}: ${err.message}`);
     }
   }
 
-  throw new Error("Auto routing failed for all providers");
+  throw new Error(providerErrors.join(" | ") || "Auto routing failed");
 }
 
 function containsImage(messages) {
@@ -147,10 +138,9 @@ function containsImage(messages) {
 
 async function tryDirectProvider({ model, messages, maxTokens, env }) {
   if (model.startsWith("groq/") && env.GROQ_API_KEY) {
-    const groqModel = model.replace(/^groq\//, "");
     return callOpenAICompat({
       provider: "groq",
-      model: groqModel,
+      model: model.replace(/^groq\//, ""),
       apiKey: env.GROQ_API_KEY,
       endpoint: "https://api.groq.com/openai/v1/chat/completions",
       headers: {},
@@ -173,10 +163,9 @@ async function tryDirectProvider({ model, messages, maxTokens, env }) {
   }
 
   if (model.startsWith("cerebras/") && env.CEREBRAS_API_KEY) {
-    const cerebrasModel = model.replace(/^cerebras\//, "");
     return callOpenAICompat({
       provider: "cerebras",
-      model: cerebrasModel,
+      model: model.replace(/^cerebras\//, ""),
       apiKey: env.CEREBRAS_API_KEY,
       endpoint: "https://api.cerebras.ai/v1/chat/completions",
       headers: {},
@@ -186,10 +175,9 @@ async function tryDirectProvider({ model, messages, maxTokens, env }) {
   }
 
   if ((model.startsWith("meta/") || model.startsWith("google/")) && env.NVIDIA_API_KEY) {
-    const nimModel = model.replace(/^meta\//, "meta/").replace(/^google\//, "google/");
     return callOpenAICompat({
       provider: "nvidia",
-      model: nimModel,
+      model,
       apiKey: env.NVIDIA_API_KEY,
       endpoint: "https://integrate.api.nvidia.com/v1/chat/completions",
       headers: {},
@@ -199,10 +187,9 @@ async function tryDirectProvider({ model, messages, maxTokens, env }) {
   }
 
   if (model.startsWith("github/") && env.GITHUB_MODELS_TOKEN) {
-    const ghModel = model.replace(/^github\//, "");
     return callOpenAICompat({
       provider: "github",
-      model: mapGithubModel(ghModel),
+      model: mapGithubModel(model.replace(/^github\//, "")),
       apiKey: env.GITHUB_MODELS_TOKEN,
       endpoint: "https://models.inference.ai.azure.com/chat/completions",
       headers: {},
@@ -212,9 +199,8 @@ async function tryDirectProvider({ model, messages, maxTokens, env }) {
   }
 
   if (model.startsWith("gemini/") && env.GEMINI_API_KEY) {
-    const geminiModel = model.replace(/^gemini\//, "");
     return callGemini({
-      model: geminiModel,
+      model: model.replace(/^gemini\//, ""),
       apiKey: env.GEMINI_API_KEY,
       messages,
       maxTokens
@@ -247,7 +233,7 @@ async function tryOpenRouterFallback({ model, messages, maxTokens, env }) {
     endpoint: "https://openrouter.ai/api/v1/chat/completions",
     headers: {
       "HTTP-Referer": env.FRONTEND_URL || "https://vercel.app",
-      "X-Title": "AI Chat"
+      "X-Title": "AI Chat Debug"
     },
     messages,
     maxTokens
@@ -267,7 +253,6 @@ function mapToOpenRouterModel(model) {
     "meta/llama-3.2-90b-vision-instruct": "meta-llama/llama-3.2-90b-vision-instruct",
     "cerebras/llama-3.1-70b": "meta-llama/llama-3.1-70b-instruct"
   };
-
   return table[model] || null;
 }
 
@@ -280,13 +265,6 @@ async function callOpenAICompat({
   messages,
   maxTokens
 }) {
-  const payload = {
-    model,
-    messages,
-    temperature: 0.7,
-    max_tokens: maxTokens
-  };
-
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -294,15 +272,24 @@ async function callOpenAICompat({
       Authorization: `Bearer ${apiKey}`,
       ...headers
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.7,
+      max_tokens: maxTokens
+    })
   });
 
-  const data = await response.json().catch(() => ({}));
+  const raw = await response.text().catch(() => "");
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { raw };
+  }
 
   if (!response.ok) {
-    throw new Error(
-      `${provider} error ${response.status}: ${data?.error?.message || data?.error || "Unknown error"}`
-    );
+    throw new Error(`${provider} ${response.status}: ${data?.error?.message || data?.error || raw || "Unknown error"}`);
   }
 
   const text =
@@ -314,11 +301,7 @@ async function callOpenAICompat({
     throw new Error(`${provider} returned empty response`);
   }
 
-  return {
-    text,
-    provider,
-    model
-  };
+  return { text, provider, model };
 }
 
 async function callGemini({ model, apiKey, messages, maxTokens }) {
@@ -340,7 +323,6 @@ async function callGemini({ model, apiKey, messages, maxTokens }) {
         if (part.type === "text") {
           return { text: String(part.text || "") };
         }
-
         if (part.type === "image_url" && part.image_url?.url) {
           return {
             fileData: {
@@ -349,16 +331,12 @@ async function callGemini({ model, apiKey, messages, maxTokens }) {
             }
           };
         }
-
         return null;
       }).filter(Boolean);
 
       contents.push({ role, parts });
     } else {
-      contents.push({
-        role,
-        parts: [{ text: String(msg.content || "") }]
-      });
+      contents.push({ role, parts: [{ text: String(msg.content || "") }] });
     }
   }
 
@@ -378,18 +356,20 @@ async function callGemini({ model, apiKey, messages, maxTokens }) {
 
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
 
-  const data = await response.json().catch(() => ({}));
+  const raw = await response.text().catch(() => "");
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { raw };
+  }
 
   if (!response.ok) {
-    throw new Error(
-      `gemini error ${response.status}: ${data?.error?.message || "Unknown error"}`
-    );
+    throw new Error(`gemini ${response.status}: ${data?.error?.message || raw || "Unknown error"}`);
   }
 
   const text = data?.candidates?.[0]?.content?.parts
@@ -401,11 +381,7 @@ async function callGemini({ model, apiKey, messages, maxTokens }) {
     throw new Error("gemini returned empty response");
   }
 
-  return {
-    text,
-    provider: "gemini",
-    model
-  };
+  return { text, provider: "gemini", model };
 }
 
 function guessMimeFromUrl(url) {
