@@ -29,7 +29,7 @@ const hamburgerBtn = document.getElementById("hamburgerBtn");
 const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
 const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-v2";
+const STORAGE_KEY = "ai-chat-worker-v3";
 
 const ALLOWED_MODELS = {
   "groq/llama-3.3-70b-versatile": {
@@ -856,7 +856,11 @@ logoutBtn?.addEventListener("click", async () => {
   await sb.auth.signOut();
   currentUser = null;
   hasLoadedChats = false;
+  state.chats = [];
+  state.activeChatId = null;
+  saveState();
   renderAuthState();
+  renderAll();
 });
 
 sb?.auth.onAuthStateChange(async (_event, session) => {
