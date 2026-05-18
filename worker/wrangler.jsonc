@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ai1",
-  "main": "src/worker.js",
+  "main": "worker.js",
   "compatibility_date": "2026-05-17",
   "workers_dev": true,
   "observability": {
