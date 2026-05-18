@@ -26,8 +26,8 @@ const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
 
-let supaUrl = window.NEXT_PUBLIC_SUPABASE_URL || "https://dfvlipfcblnnuxylhzis.supabase.co";
-let supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
+const supaUrl = window.NEXT_PUBLIC_SUPABASE_URL || "https://dfvlipfcblnnuxylhzis.supabase.co";
+const supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
 const WORKER_BASE = "https://ai1.ai-beta69690.workers.dev";
 
 const ALLOWED_MODELS = {
@@ -68,7 +68,7 @@ if (supaUrl && supaKey && window.supabase) {
   sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
-const STORAGE_KEY = "ai-chat-sync-v60";
+const STORAGE_KEY = "ai-chat-sync-v61";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
@@ -77,6 +77,7 @@ let cloudLoaded = false;
 
 let state = JSON.parse(
   localStorage.getItem(STORAGE_KEY) ||
+  localStorage.getItem("ai-chat-sync-v60") ||
   localStorage.getItem("ai-chat-sync-v50") ||
   localStorage.getItem("ai-chat-sync-v49") ||
   localStorage.getItem("ai-chat-sync-v48") ||
@@ -89,7 +90,7 @@ if (!state || !Array.isArray(state.chats)) {
 if (!state.theme) state.theme = "dark";
 
 const renderer = new marked.Renderer();
-renderer.code = function(code, language) {
+renderer.code = function (code, language) {
   const validLang = hljs.getLanguage(language) ? language : "plaintext";
   const highlighted = hljs.highlight(code, { language: validLang }).value;
   return `<div class="code-block">
@@ -104,7 +105,7 @@ renderer.code = function(code, language) {
 };
 marked.setOptions({ renderer, breaks: true, gfm: true });
 
-window.copyCodeBtn = function(btn) {
+window.copyCodeBtn = function (btn) {
   const pre = btn.parentElement.parentElement.nextElementSibling;
   navigator.clipboard.writeText(pre.innerText).then(() => {
     btn.innerHTML = "✅";
@@ -131,6 +132,15 @@ function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function getD1UserId() {
   const meta = currentUser?.user_metadata || {};
   const raw = meta.d1_user_id ?? meta.user_id ?? meta.db_user_id ?? 1;
@@ -141,18 +151,14 @@ function getD1UserId() {
 function buildWorkerUrl(path) {
   const d1UserId = getD1UserId();
   const url = new URL(path, WORKER_BASE);
-  if (d1UserId) {
-    url.searchParams.set("user_id", String(d1UserId));
-  }
+  if (d1UserId) url.searchParams.set("user_id", String(d1UserId));
   return url.toString();
 }
 
 function getWorkerHeaders(extra = {}) {
   const headers = { ...extra };
   const d1UserId = getD1UserId();
-  if (d1UserId) {
-    headers["X-User-Id"] = String(d1UserId);
-  }
+  if (d1UserId) headers["X-User-Id"] = String(d1UserId);
   return headers;
 }
 
@@ -163,7 +169,11 @@ async function workerFetch(path, options = {}) {
 }
 
 function getActiveChat() {
-  return state.chats.find(c => String(c.id) === String(state.activeChatId)) || null;
+  return state.chats.find((c) => String(c.id) === String(state.activeChatId)) || null;
+}
+
+function setActiveChat(id) {
+  state.activeChatId = id ? String(id) : null;
 }
 
 function saveState() {
@@ -174,14 +184,16 @@ function ensureLocalChat() {
   let active = getActiveChat();
   if (!active) {
     active = {
-      id: uid(),
+      id: `local-${uid()}`,
       title: "Новий чат",
       messages: [],
       createdAt: Date.now(),
-      localOnly: true
+      updatedAt: Date.now(),
+      localOnly: true,
+      messagesLoaded: true
     };
     state.chats.unshift(active);
-    state.activeChatId = active.id;
+    setActiveChat(active.id);
     saveState();
   }
   return active;
@@ -233,32 +245,36 @@ function renderChatList() {
           await deleteCloudChat(item.id);
         }
       } catch (err) {
-        console.error(err);
+        console.error("delete chat failed:", err);
       }
 
-      state.chats = state.chats.filter(c => String(c.id) !== String(item.id));
+      state.chats = state.chats.filter((c) => String(c.id) !== String(item.id));
+
       if (String(state.activeChatId) === String(item.id)) {
-        state.activeChatId = state.chats[0]?.id || null;
+        setActiveChat(state.chats[0]?.id || null);
       }
+
       saveState();
       renderAll();
     };
 
     div.onclick = async () => {
       if (requestInFlight) return;
-      state.activeChatId = item.id;
+
+      setActiveChat(item.id);
       saveState();
+      renderAll();
 
       if (!item.localOnly && !item.messagesLoaded) {
         try {
           const data = await fetchCloudChat(item.id);
           mergeCloudChatIntoState(data.chat);
+          renderAll();
         } catch (err) {
-          console.error(err);
+          console.error("fetchCloudChat failed:", err);
         }
       }
 
-      renderAll();
       sidebar?.classList.remove("open");
       mobileOverlay?.classList.remove("show");
       document.body.classList.remove("no-scroll");
@@ -274,7 +290,7 @@ function renderMessages() {
 
   chat.innerHTML = "";
 
-  if (!active.messages.length) {
+  if (!active.messages?.length) {
     chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`;
     return;
   }
@@ -309,7 +325,7 @@ function renderMessages() {
 
     if (Array.isArray(msg.attachments)) {
       for (const att of msg.attachments) {
-        if (att.type && att.type.startsWith("image/") && att.url) {
+        if (att?.type?.startsWith("image/") && att.url) {
           const img = document.createElement("img");
           img.src = att.url;
           img.className = "inline-preview-image";
@@ -325,10 +341,18 @@ function renderMessages() {
   chat.scrollTop = chat.scrollHeight;
 }
 
+function renderHeaderTitle() {
+  const active = getActiveChat();
+  const title = active?.title || "Новий чат";
+  const titleEl = document.querySelector(".topbar h1, .chat-title, [data-chat-title]");
+  if (titleEl) titleEl.textContent = title;
+}
+
 function renderAll() {
   renderAuthState();
   renderChatList();
   renderMessages();
+  renderHeaderTitle();
 
   if (stopBtn && sendBtn) {
     if (requestInFlight) {
@@ -385,15 +409,6 @@ function fileToDataUrl(file) {
   });
 }
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function normalizeCloudMessage(row) {
   return {
     id: String(row.id),
@@ -404,14 +419,15 @@ function normalizeCloudMessage(row) {
     model: row.model || null,
     prompt_tokens: row.prompt_tokens || 0,
     completion_tokens: row.completion_tokens || 0,
-    attachments: Array.isArray(row.attachments) ? row.attachments : []
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    cloudSaved: true
   };
 }
 
 function mergeCloudChatIntoState(chatData) {
-  const existingIndex = state.chats.findIndex(c => String(c.id) === String(chatData.id));
+  const existingIndex = state.chats.findIndex((c) => String(c.id) === String(chatData.id));
   const merged = {
-    id: chatData.id,
+    id: String(chatData.id),
     title: chatData.title || "Новий чат",
     model: chatData.model || "",
     system_prompt: chatData.system_prompt || "",
@@ -423,8 +439,9 @@ function mergeCloudChatIntoState(chatData) {
   };
 
   if (existingIndex >= 0) {
+    const existing = state.chats[existingIndex];
     state.chats[existingIndex] = {
-      ...state.chats[existingIndex],
+      ...existing,
       ...merged
     };
   } else {
@@ -432,7 +449,7 @@ function mergeCloudChatIntoState(chatData) {
   }
 
   if (!state.activeChatId) {
-    state.activeChatId = merged.id;
+    setActiveChat(merged.id);
   }
 
   saveState();
@@ -494,27 +511,38 @@ async function loadCloudChats() {
   if (cloudLoaded) return;
 
   try {
+    const previousActiveId = state.activeChatId;
+    const previousChats = Array.isArray(state.chats) ? state.chats : [];
+
     const data = await fetchCloudChats();
     const chats = Array.isArray(data.chats) ? data.chats : [];
 
-    state.chats = chats.map(item => ({
-      id: item.id,
-      title: item.title || "Новий чат",
-      preview: item.preview || "",
-      model: item.model || "",
-      createdAt: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
-      updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : Date.now(),
-      messages: [],
-      localOnly: false,
-      messagesLoaded: false
-    }));
+    const mappedCloudChats = chats.map((item) => {
+      const existing = previousChats.find((c) => String(c.id) === String(item.id));
+      return {
+        id: String(item.id),
+        title: item.title || "Новий чат",
+        preview: item.preview || "",
+        model: item.model || "",
+        createdAt: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
+        updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : Date.now(),
+        messages: existing?.messages || [],
+        localOnly: false,
+        messagesLoaded: !!existing?.messagesLoaded
+      };
+    });
 
-    if (state.chats.length) {
-      state.activeChatId = state.chats[0].id;
-      const full = await fetchCloudChat(state.chats[0].id);
-      mergeCloudChatIntoState(full.chat);
+    state.chats = mappedCloudChats;
+
+    if (previousActiveId && state.chats.some((c) => String(c.id) === String(previousActiveId))) {
+      setActiveChat(previousActiveId);
     } else {
-      state.activeChatId = null;
+      setActiveChat(state.chats[0]?.id || null);
+    }
+
+    if (state.activeChatId) {
+      const full = await fetchCloudChat(state.activeChatId);
+      mergeCloudChatIntoState(full.chat);
     }
 
     saveState();
@@ -525,7 +553,7 @@ async function loadCloudChats() {
   }
 }
 
-window.retryMessage = function() {
+window.retryMessage = function () {
   const active = getActiveChat();
   if (!active) return;
 
@@ -534,7 +562,7 @@ window.retryMessage = function() {
     active.messages.pop();
   }
 
-  const lastUserMsg = [...active.messages].reverse().find(m => m.role === "user");
+  const lastUserMsg = [...active.messages].reverse().find((m) => m.role === "user");
   if (lastUserMsg) {
     selectedImage = lastUserMsg.image || null;
     updateSelectedImageUI();
@@ -545,9 +573,9 @@ window.retryMessage = function() {
 function buildMessagesForAPI(active, assistantMsgId, modelConf) {
   const rawMessages = [{ role: "system", content: modelConf.system }];
 
-  const recent = active.messages
+  const recent = (active.messages || [])
     .slice(-12)
-    .filter(m => m.id !== assistantMsgId && !m.isError);
+    .filter((m) => m.id !== assistantMsgId && !m.isError);
 
   for (const m of recent) {
     if (m.role === "user") {
@@ -612,10 +640,14 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf) {
 async function ensureRemoteChat(active, firstMessageText) {
   if (!active.localOnly && !String(active.id).startsWith("local-")) return active;
 
-  const created = await createCloudChat((firstMessageText || "Новий чат").slice(0, 30) || "Новий чат", modelSelect?.value || "auto");
-  const oldId = active.id;
+  const created = await createCloudChat(
+    (firstMessageText || "Новий чат").slice(0, 30) || "Новий чат",
+    modelSelect?.value || "auto"
+  );
+
+  const oldId = String(active.id);
   const newChat = {
-    id: created.chat.id,
+    id: String(created.chat.id),
     title: created.chat.title || "Новий чат",
     model: created.chat.model || "",
     system_prompt: created.chat.system_prompt || "",
@@ -623,13 +655,20 @@ async function ensureRemoteChat(active, firstMessageText) {
     updatedAt: created.chat.updated_at ? new Date(created.chat.updated_at).getTime() : Date.now(),
     localOnly: false,
     messagesLoaded: true,
-    messages: []
+    messages: active.messages || []
   };
 
-  state.chats = state.chats.map(c => String(c.id) === String(oldId) ? newChat : c);
-  state.activeChatId = newChat.id;
+  state.chats = state.chats.map((c) =>
+    String(c.id) === oldId
+      ? { ...newChat, messages: c.messages || [] }
+      : c
+  );
+
+  setActiveChat(newChat.id);
   saveState();
-  return newChat;
+  renderAll();
+
+  return state.chats.find((c) => String(c.id) === String(newChat.id)) || newChat;
 }
 
 async function sendChatMessage(text, isRetry = false) {
@@ -647,6 +686,7 @@ async function sendChatMessage(text, isRetry = false) {
         isError: true,
         content: "Ця модель не підтримує фото. Обери Gemini Flash, Gemma 3 або Llama 3.2 Vision."
       });
+      saveState();
       renderAll();
       return;
     }
@@ -660,11 +700,11 @@ async function sendChatMessage(text, isRetry = false) {
       attachments: []
     });
 
-    if (active.messages.length === 1) {
+    if ((active.messages || []).length === 1) {
       active.title = (text || "Фото").slice(0, 30) || "Новий чат";
     }
 
-    if (active.messages.length > 50) {
+    if ((active.messages || []).length > 50) {
       active.messages = active.messages.slice(-50);
     }
 
@@ -673,7 +713,6 @@ async function sendChatMessage(text, isRetry = false) {
     saveState();
   }
 
-  const userMessage = [...active.messages].reverse().find(m => m.role === "user");
   const assistantMsg = {
     id: uid(),
     role: "assistant",
@@ -682,6 +721,7 @@ async function sendChatMessage(text, isRetry = false) {
   };
 
   active.messages.push(assistantMsg);
+  saveState();
   renderAll();
   setBusy(true, "Генерація...");
 
@@ -690,13 +730,16 @@ async function sendChatMessage(text, isRetry = false) {
 
   try {
     active = await ensureRemoteChat(active, text);
+    active = getActiveChat();
 
-    const reloadedActive = getActiveChat();
-    if (!reloadedActive) throw new Error("Не вдалося підготувати чат");
-    active = reloadedActive;
+    if (!active) {
+      throw new Error("Active chat not found after remote creation");
+    }
 
-    let createdUserMessage = null;
-    if (userMessage && !userMessage.cloudSaved) {
+    renderAll();
+
+    const userMessage = [...active.messages].reverse().find((m) => m.role === "user" && !m.cloudSaved);
+    if (userMessage) {
       const created = await createCloudMessage(active.id, {
         role: "user",
         content: userMessage.content || "",
@@ -714,7 +757,8 @@ async function sendChatMessage(text, isRetry = false) {
         userMessage.attachments = [uploaded.attachment];
       }
 
-      createdUserMessage = created.message;
+      saveState();
+      renderAll();
     }
 
     const safeMessages = buildMessagesForAPI(active, assistantMsg.id, modelConf);
@@ -735,7 +779,16 @@ async function sendChatMessage(text, isRetry = false) {
 
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
-      throw new Error(raw || `HTTP ${response.status}`);
+      let message = raw || `HTTP ${response.status}`;
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.details) message = parsed.details;
+        else if (parsed?.error?.message) message = parsed.error.message;
+        else if (parsed?.error) message = typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error);
+      } catch (_) {}
+
+      throw new Error(message);
     }
 
     if (!response.body) {
@@ -745,9 +798,6 @@ async function sendChatMessage(text, isRetry = false) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
-
-    const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content");
-    const targetEl = msgEls[msgEls.length - 1];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -766,13 +816,14 @@ async function sendChatMessage(text, isRetry = false) {
 
           try {
             const parsed = JSON.parse(dataStr);
-            const delta = parsed?.choices?.[0]?.delta?.content || parsed?.choices?.[0]?.message?.content || "";
+            const delta =
+              parsed?.choices?.[0]?.delta?.content ||
+              parsed?.choices?.[0]?.message?.content ||
+              "";
+
             if (typeof delta === "string" && delta) {
               assistantMsg.content += delta;
-              if (targetEl) {
-                targetEl.innerHTML = renderMarkdown(assistantMsg.content);
-                chat.scrollTop = chat.scrollHeight;
-              }
+              renderAll();
             }
           } catch (_) {}
         }
@@ -790,25 +841,34 @@ async function sendChatMessage(text, isRetry = false) {
 
     assistantMsg.id = String(createdAssistant.message.id);
     assistantMsg.cloudSaved = true;
-
+    saveState();
+    renderAll();
     clearSelectedImage();
   } catch (e) {
     if (e?.name === "AbortError") {
       assistantMsg.content += "\n\n*[Зупинено]*";
+      saveState();
       renderAll();
     } else {
-      active.messages.pop();
-      active.messages.push({
+      const activeNow = getActiveChat();
+      const target = activeNow || active;
+      if (target?.messages?.length) {
+        const idx = target.messages.findIndex((m) => String(m.id) === String(assistantMsg.id));
+        if (idx >= 0) target.messages.splice(idx, 1);
+      }
+
+      target.messages.push({
         id: uid(),
         role: "assistant",
         isError: true,
         content: e.message || "Невідома помилка"
       });
+
+      saveState();
       renderAll();
     }
   } finally {
     currentController = null;
-    saveState();
     setBusy(false, "Готово");
   }
 }
@@ -859,8 +919,18 @@ clearBtn?.addEventListener("click", () => {
 });
 
 newChatBtn?.addEventListener("click", () => {
-  state.activeChatId = null;
-  ensureLocalChat();
+  const draft = {
+    id: `local-${uid()}`,
+    title: "Новий чат",
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    localOnly: true,
+    messagesLoaded: true
+  };
+  state.chats.unshift(draft);
+  setActiveChat(draft.id);
+  saveState();
   renderAll();
   sidebar?.classList.remove("open");
   mobileOverlay?.classList.remove("show");
@@ -887,7 +957,7 @@ imageInput?.addEventListener("change", async () => {
       dataUrl
     };
     updateSelectedImageUI();
-  } catch (e) {
+  } catch (_) {
     alert("Помилка завантаження фото");
   }
 });
