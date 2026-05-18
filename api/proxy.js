@@ -1,393 +1,228 @@
-export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+export const config = {
+  runtime: "nodejs"
+};
 
-    const body = typeof req.body === "object" && req.body ? req.body : {};
-    const model = String(body.model || "auto");
-    const messages = Array.isArray(body.messages) ? body.messages : [];
-    const maxTokens = Number(body.max_tokens || 4096);
-
-    if (!messages.length) {
-      return res.status(400).json({ error: "messages are required" });
-    }
-
-    const normalized = normalizeMessages(messages);
-
-    const result = await routeAndGenerate({
-      model,
-      messages: normalized,
-      maxTokens,
-      env: process.env
-    });
-
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error("proxy error:", error);
-    return res.status(500).json({
-      error: error.message || "Proxy server error",
-      stack: process.env.NODE_ENV === "production" ? undefined : error.stack
-    });
-  }
+function json(res, status, data) {
+  return res.status(status).json(data);
 }
 
-function normalizeMessages(messages) {
-  return messages
-    .filter(Boolean)
-    .map((m) => {
-      const role = String(m.role || "user");
+const NVIDIA_MODEL_MAP = {
+  "google/gemma-3-27b-it": "google/gemma-3-27b-it",
+  "meta/llama-3.2-90b-vision-instruct": "meta/llama-3.2-90b-vision-instruct",
+  "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct"
+};
 
-      if (Array.isArray(m.content)) {
-        const normalizedContent = m.content
-          .map((part) => {
-            if (!part || typeof part !== "object") return null;
+const OPENROUTER_MODEL_MAP = {
+  "qwen/qwen3.5-122b-a10b": "qwen/qwen-2.5-72b-instruct"
+};
 
-            if (part.type === "text") {
-              return { type: "text", text: String(part.text || "") };
-            }
-
-            if (part.type === "image_url") {
-              const url =
-                typeof part.image_url === "string"
-                  ? part.image_url
-                  : part.image_url?.url;
-              if (!url) return null;
-              return { type: "image_url", image_url: { url: String(url) } };
-            }
-
-            return null;
-          })
-          .filter(Boolean);
-
-        return { role, content: normalizedContent };
-      }
-
-      return { role, content: String(m.content || "") };
-    });
-}
-
-async function routeAndGenerate({ model, messages, maxTokens, env }) {
-  if (model === "auto") {
-    return autoRoute({ messages, maxTokens, env });
+function getProviderConfig(model) {
+  if (!model || typeof model !== "string") {
+    throw new Error("Model is required");
   }
 
-  const providerErrors = [];
-
-  try {
-    const direct = await tryDirectProvider({ model, messages, maxTokens, env });
-    if (direct) return { ...direct, providerErrors };
-  } catch (err) {
-    providerErrors.push(`direct ${model}: ${err.message}`);
-  }
-
-  try {
-    const fallback = await tryOpenRouterFallback({ model, messages, maxTokens, env });
-    if (fallback) return { ...fallback, providerErrors };
-  } catch (err) {
-    providerErrors.push(`openrouter ${model}: ${err.message}`);
-  }
-
-  throw new Error(providerErrors.join(" | ") || `No available provider for model: ${model}`);
-}
-
-async function autoRoute({ messages, maxTokens, env }) {
-  const hasImage = containsImage(messages);
-  const candidates = hasImage
-    ? [
-        "gemini/gemini-2.5-flash",
-        "meta/llama-3.2-90b-vision-instruct",
-        "google/gemma-3-27b-it",
-        "github/gpt-4o-mini"
-      ]
-    : [
-        "groq/llama-3.3-70b-versatile",
-        "github/gpt-4o-mini",
-        "mistral/mistral-large",
-        "cerebras/llama-3.1-70b",
-        "github/phi-4"
-      ];
-
-  const providerErrors = [];
-
-  for (const candidate of candidates) {
-    try {
-      const direct = await tryDirectProvider({ model: candidate, messages, maxTokens, env });
-      if (direct) return { ...direct, providerErrors };
-    } catch (err) {
-      providerErrors.push(`direct ${candidate}: ${err.message}`);
-    }
-
-    try {
-      const fallback = await tryOpenRouterFallback({ model: candidate, messages, maxTokens, env });
-      if (fallback) return { ...fallback, providerErrors };
-    } catch (err) {
-      providerErrors.push(`openrouter ${candidate}: ${err.message}`);
-    }
-  }
-
-  throw new Error(providerErrors.join(" | ") || "Auto routing failed");
-}
-
-function containsImage(messages) {
-  return messages.some((m) =>
-    Array.isArray(m.content) &&
-    m.content.some((part) => part?.type === "image_url" && part?.image_url?.url)
-  );
-}
-
-async function tryDirectProvider({ model, messages, maxTokens, env }) {
-  if (model.startsWith("groq/") && env.GROQ_API_KEY) {
-    return callOpenAICompat({
+  if (model.startsWith("groq/")) {
+    return {
       provider: "groq",
-      model: model.replace(/^groq\//, ""),
-      apiKey: env.GROQ_API_KEY,
-      endpoint: "https://api.groq.com/openai/v1/chat/completions",
-      headers: {},
-      messages,
-      maxTokens
-    });
-  }
-
-  if (model.startsWith("mistral/") && env.MISTRAL_API_KEY) {
-    const mistralModel = model.replace(/^mistral\//, "");
-    return callOpenAICompat({
-      provider: "mistral",
-      model: mistralModel === "mistral-large" ? "mistral-large-latest" : mistralModel,
-      apiKey: env.MISTRAL_API_KEY,
-      endpoint: "https://api.mistral.ai/v1/chat/completions",
-      headers: {},
-      messages,
-      maxTokens
-    });
-  }
-
-  if (model.startsWith("cerebras/") && env.CEREBRAS_API_KEY) {
-    return callOpenAICompat({
-      provider: "cerebras",
-      model: model.replace(/^cerebras\//, ""),
-      apiKey: env.CEREBRAS_API_KEY,
-      endpoint: "https://api.cerebras.ai/v1/chat/completions",
-      headers: {},
-      messages,
-      maxTokens
-    });
-  }
-
-  if ((model.startsWith("meta/") || model.startsWith("google/")) && env.NVIDIA_API_KEY) {
-    return callOpenAICompat({
-      provider: "nvidia",
-      model,
-      apiKey: env.NVIDIA_API_KEY,
-      endpoint: "https://integrate.api.nvidia.com/v1/chat/completions",
-      headers: {},
-      messages,
-      maxTokens
-    });
-  }
-
-  if (model.startsWith("github/") && env.GITHUB_MODELS_TOKEN) {
-    return callOpenAICompat({
-      provider: "github",
-      model: mapGithubModel(model.replace(/^github\//, "")),
-      apiKey: env.GITHUB_MODELS_TOKEN,
-      endpoint: "https://models.inference.ai.azure.com/chat/completions",
-      headers: {},
-      messages,
-      maxTokens
-    });
-  }
-
-  if (model.startsWith("gemini/") && env.GEMINI_API_KEY) {
-    return callGemini({
-      model: model.replace(/^gemini\//, ""),
-      apiKey: env.GEMINI_API_KEY,
-      messages,
-      maxTokens
-    });
-  }
-
-  return null;
-}
-
-function mapGithubModel(model) {
-  const map = {
-    "gpt-4o-mini": "gpt-4o-mini",
-    "phi-4": "Phi-4",
-    "gpt-4.1": "gpt-4.1",
-    "gpt-4o": "gpt-4o"
-  };
-  return map[model] || model;
-}
-
-async function tryOpenRouterFallback({ model, messages, maxTokens, env }) {
-  if (!env.OPENROUTER_API_KEY) return null;
-
-  const mapped = mapToOpenRouterModel(model);
-  if (!mapped) return null;
-
-  return callOpenAICompat({
-    provider: "openrouter",
-    model: mapped,
-    apiKey: env.OPENROUTER_API_KEY,
-    endpoint: "https://openrouter.ai/api/v1/chat/completions",
-    headers: {
-      "HTTP-Referer": env.FRONTEND_URL || "https://vercel.app",
-      "X-Title": "AI Chat Debug"
-    },
-    messages,
-    maxTokens
-  });
-}
-
-function mapToOpenRouterModel(model) {
-  const table = {
-    "github/gpt-4o-mini": "openai/gpt-4o-mini",
-    "github/phi-4": "microsoft/phi-4",
-    "groq/llama-3.3-70b-versatile": "meta-llama/llama-3.3-70b-instruct",
-    "mistral/codestral": "mistralai/codestral-2501",
-    "mistral/mistral-large": "mistralai/mistral-large",
-    "gemini/gemini-2.5-flash": "google/gemini-2.5-flash",
-    "meta/llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct",
-    "google/gemma-3-27b-it": "google/gemma-3-27b-it",
-    "meta/llama-3.2-90b-vision-instruct": "meta-llama/llama-3.2-90b-vision-instruct",
-    "cerebras/llama-3.1-70b": "meta-llama/llama-3.1-70b-instruct"
-  };
-  return table[model] || null;
-}
-
-async function callOpenAICompat({
-  provider,
-  model,
-  apiKey,
-  endpoint,
-  headers,
-  messages,
-  maxTokens
-}) {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      ...headers
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: maxTokens
-    })
-  });
-
-  const raw = await response.text().catch(() => "");
-  let data = {};
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    data = { raw };
-  }
-
-  if (!response.ok) {
-    throw new Error(`${provider} ${response.status}: ${data?.error?.message || data?.error || raw || "Unknown error"}`);
-  }
-
-  const text =
-    data?.choices?.[0]?.message?.content ||
-    data?.choices?.[0]?.text ||
-    "";
-
-  if (!text) {
-    throw new Error(`${provider} returned empty response`);
-  }
-
-  return { text, provider, model };
-}
-
-async function callGemini({ model, apiKey, messages, maxTokens }) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const contents = [];
-  let systemInstruction = "";
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      systemInstruction += (typeof msg.content === "string" ? msg.content : "") + "\n";
-      continue;
-    }
-
-    const role = msg.role === "assistant" ? "model" : "user";
-
-    if (Array.isArray(msg.content)) {
-      const parts = msg.content.map((part) => {
-        if (part.type === "text") {
-          return { text: String(part.text || "") };
-        }
-        if (part.type === "image_url" && part.image_url?.url) {
-          return {
-            fileData: {
-              mimeType: guessMimeFromUrl(part.image_url.url),
-              fileUri: part.image_url.url
-            }
-          };
-        }
-        return null;
-      }).filter(Boolean);
-
-      contents.push({ role, parts });
-    } else {
-      contents.push({ role, parts: [{ text: String(msg.content || "") }] });
-    }
-  }
-
-  const payload = {
-    contents,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: maxTokens
-    }
-  };
-
-  if (systemInstruction.trim()) {
-    payload.systemInstruction = {
-      parts: [{ text: systemInstruction.trim() }]
+      apiKey: process.env.GROQ_API_KEY,
+      url: "https://api.groq.com/openai/v1/chat/completions",
+      model: model.replace(/^groq\//, "")
     };
   }
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  const raw = await response.text().catch(() => "");
-  let data = {};
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    data = { raw };
+  if (model.startsWith("gemini/")) {
+    return {
+      provider: "gemini",
+      apiKey: process.env.GEMINI_API_KEY,
+      url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      model: model.replace(/^gemini\//, "")
+    };
   }
 
-  if (!response.ok) {
-    throw new Error(`gemini ${response.status}: ${data?.error?.message || raw || "Unknown error"}`);
+  if (OPENROUTER_MODEL_MAP[model]) {
+    return {
+      provider: "openrouter",
+      apiKey: process.env.OPENROUTER_API_KEY,
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      model: OPENROUTER_MODEL_MAP[model]
+    };
   }
 
-  const text = data?.candidates?.[0]?.content?.parts
-    ?.map((p) => p?.text || "")
-    .join("")
-    .trim();
-
-  if (!text) {
-    throw new Error("gemini returned empty response");
+  if (NVIDIA_MODEL_MAP[model]) {
+    return {
+      provider: "nvidia",
+      apiKey: process.env.NVIDIA_API_KEY,
+      url: "https://integrate.api.nvidia.com/v1/chat/completions",
+      model: NVIDIA_MODEL_MAP[model]
+    };
   }
 
-  return { text, provider: "gemini", model };
+  throw new Error(`Модель не підтримується цим proxy: ${model}`);
 }
 
-function guessMimeFromUrl(url) {
-  const lower = String(url || "").toLowerCase();
-  if (lower.includes(".png")) return "image/png";
-  if (lower.includes(".webp")) return "image/webp";
-  if (lower.includes(".gif")) return "image/gif";
-  return "image/jpeg";
+function sanitizeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .filter((m) => m && typeof m === "object" && m.role)
+    .map((m) => {
+      if (Array.isArray(m.content)) {
+        return {
+          role: m.role,
+          content: m.content
+            .filter((part) => part && typeof part === "object")
+            .map((part) => {
+              if (part.type === "text") {
+                return {
+                  type: "text",
+                  text: typeof part.text === "string" ? part.text : ""
+                };
+              }
+
+              if (part.type === "image_url" && part.image_url?.url) {
+                return {
+                  type: "image_url",
+                  image_url: {
+                    url: part.image_url.url
+                  }
+                };
+              }
+
+              return null;
+            })
+            .filter(Boolean)
+        };
+      }
+
+      return {
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : ""
+      };
+    });
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return json(res, 405, { error: "Method not allowed" });
+  }
+
+  try {
+    const {
+      model,
+      messages,
+      temperature = 0.2,
+      max_tokens = 1024,
+      top_p = 0.9,
+      stream = true
+    } = req.body || {};
+
+    if (!model) {
+      return json(res, 400, { error: "Missing model" });
+    }
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return json(res, 400, { error: "Missing messages" });
+    }
+
+    const cfg = getProviderConfig(model);
+
+    if (!cfg.apiKey) {
+      return json(res, 500, {
+        error: `Missing API key for provider: ${cfg.provider}`
+      });
+    }
+
+    const cleanMessages = sanitizeMessages(messages);
+
+    const payload = {
+      model: cfg.model,
+      messages: cleanMessages,
+      temperature,
+      top_p,
+      stream
+    };
+
+    if (cfg.provider === "groq") {
+      payload.max_completion_tokens = max_tokens;
+    } else {
+      payload.max_tokens = max_tokens;
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${cfg.apiKey}`
+    };
+
+    if (cfg.provider === "openrouter") {
+      headers["HTTP-Referer"] = "https://ai-beta-by.vercel.app";
+      headers["X-Title"] = "AI Chat";
+    }
+
+    const upstream = await fetch(cfg.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!upstream.ok) {
+      const raw = await upstream.text().catch(() => "");
+      let parsed = null;
+
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_) {}
+
+      let message =
+        parsed?.error?.message ||
+        parsed?.error ||
+        raw ||
+        `Upstream error ${upstream.status}`;
+
+      if (typeof message === "object") {
+        message = JSON.stringify(message);
+      }
+
+      return json(res, upstream.status, {
+        error: message,
+        provider: cfg.provider,
+        model: cfg.model,
+        details: raw
+      });
+    }
+
+    if (!stream) {
+      const data = await upstream.json();
+      return res.status(200).json(data);
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive"
+    });
+
+    if (!upstream.body) {
+      res.write(`data: ${JSON.stringify({
+        error: { message: "Empty upstream body" }
+      })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value, { stream: true }));
+    }
+
+    res.end();
+  } catch (error) {
+    return json(res, 500, {
+      error: error?.message || "Internal server error"
+    });
+  }
 }
