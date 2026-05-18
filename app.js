@@ -21,61 +21,104 @@ const authLoggedIn = document.getElementById("authLoggedIn");
 const userAvatar = document.getElementById("userAvatar");
 const userName = document.getElementById("userName");
 const userEmail = document.getElementById("userEmail");
+const themeToggleBtn = document.getElementById("themeToggleBtn");
 const sidebar = document.getElementById("sidebar");
 const mobileOverlay = document.getElementById("mobileOverlay");
 const hamburgerBtn = document.getElementById("hamburgerBtn");
-const closeSidebarBtn = document.getElementById("closeSidebarBtn");
-const currentChatTitle = document.getElementById("currentChatTitle");
 
-const SUPABASE_URL = "https://dfvlipfcblnnuxylhzis.supabase.co";
-const SUPABASE_KEY = "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
-const HISTORY_API_BASE = "https://ai1.ai-beta69690.workers.dev";
-const STORAGE_KEY = "ai-chat-worker-debug-v1";
+let supaUrl = window.NEXT_PUBLIC_SUPABASE_URL || "https://dfvlipfcblnnuxylhzis.supabase.co";
+let supaKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_5tH2xD71Au-mLXJNBTrqIg_dCsSJyuF";
+const WORKER_BASE = "https://ai1.ai-beta69690.workers.dev";
 
 const ALLOWED_MODELS = {
-  auto: { system: "Ти корисний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
-  "github/gpt-4o-mini": { system: "Ти корисний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
-  "groq/llama-3.3-70b-versatile": { system: "Ти швидкий і точний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
-  "gemini/gemini-2.5-flash": { system: "Ти мультимодальний AI-помічник Gemini. Відповідай українською.", tokens: 4096, vision: true },
-  "mistral/codestral": { system: "Ти сильний AI-помічник для коду і технічних задач. Відповідай українською.", tokens: 4096, vision: false },
-  "mistral/mistral-large": { system: "Ти потужний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
-  "meta/llama-3.3-70b-instruct": { system: "Ти потужний AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
-  "google/gemma-3-27b-it": { system: "Ти мультимодальний AI-помічник. Відповідай українською.", tokens: 4096, vision: true },
-  "meta/llama-3.2-90b-vision-instruct": { system: "Ти AI-помічник для аналізу зображень. Відповідай українською.", tokens: 2048, vision: true },
-  "cerebras/llama-3.1-70b": { system: "Ти швидкий AI-помічник. Відповідай українською.", tokens: 4096, vision: false },
-  "github/phi-4": { system: "Ти розумний AI-помічник. Відповідай українською.", tokens: 4096, vision: false }
+  "groq/llama-3.3-70b-versatile": {
+    system: "Ти швидкий і точний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "gemini/gemini-2.5-flash": {
+    system: "Ти мультимодальний AI-помічник Gemini. Відповідай українською.",
+    tokens: 4096,
+    vision: true
+  },
+  "meta/llama-3.3-70b-instruct": {
+    system: "Ти потужний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "qwen/qwen3.5-122b-a10b": {
+    system: "Ти сильний AI-помічник для складних запитів. Відповідай українською.",
+    tokens: 4096,
+    vision: false
+  },
+  "google/gemma-3-27b-it": {
+    system: "Ти мультимодальний AI-помічник. Відповідай українською.",
+    tokens: 4096,
+    vision: true
+  },
+  "meta/llama-3.2-90b-vision-instruct": {
+    system: "Ти AI-помічник для аналізу зображень. Відповідай українською.",
+    tokens: 2048,
+    vision: true
+  }
 };
 
 let sb = null;
-if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+if (supaUrl && supaKey && window.supabase) {
+  sb = window.supabase.createClient(supaUrl, supaKey);
 }
 
+const STORAGE_KEY = "ai-chat-sync-v60";
 let currentUser = null;
 let selectedImage = null;
 let requestInFlight = false;
 let currentController = null;
-let hasLoadedChats = false;
+let cloudLoaded = false;
 
-let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+let state = JSON.parse(
+  localStorage.getItem(STORAGE_KEY) ||
+  localStorage.getItem("ai-chat-sync-v50") ||
+  localStorage.getItem("ai-chat-sync-v49") ||
+  localStorage.getItem("ai-chat-sync-v48") ||
+  "null"
+);
+
 if (!state || !Array.isArray(state.chats)) {
-  state = { activeChatId: null, chats: [], drafts: {} };
+  state = { activeChatId: null, chats: [], theme: "dark" };
 }
-if (!state.drafts || typeof state.drafts !== "object") state.drafts = {};
+if (!state.theme) state.theme = "dark";
 
 const renderer = new marked.Renderer();
-renderer.code = function (code, language) {
+renderer.code = function(code, language) {
   const validLang = hljs.getLanguage(language) ? language : "plaintext";
   const highlighted = hljs.highlight(code, { language: validLang }).value;
-  return `<pre><code class="hljs ${validLang}">${highlighted}</code></pre>`;
+  return `<div class="code-block">
+    <div class="code-header">
+      <span>${validLang}</span>
+      <div style="display:flex;gap:12px;">
+        <button class="copy-btn" onclick="copyCodeBtn(this)">📋 Копіювати</button>
+      </div>
+    </div>
+    <pre><code class="hljs ${validLang}">${highlighted}</code></pre>
+  </div>`;
 };
 marked.setOptions({ renderer, breaks: true, gfm: true });
 
+window.copyCodeBtn = function(btn) {
+  const pre = btn.parentElement.parentElement.nextElementSibling;
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.innerHTML = "✅";
+    setTimeout(() => {
+      btn.innerHTML = "📋 Копіювати";
+    }, 2000);
+  });
+};
+
 function formatThinking(text) {
   if (!text) return "";
-  return String(text)
-    .replace(/<think>/g, `<details class="thought-block"><summary>Міркування</summary><div class="thought-content">`)
-    .replace(/<\/think>/g, `</div></details>`);
+  let processed = text.replace(/<think>/g, '<details class="thought-block"><summary>Думка</summary><div class="thought-content">');
+  processed = processed.replace(/<\/think>/g, "</div></details>");
+  return processed;
 }
 
 function renderMarkdown(text) {
@@ -84,478 +127,444 @@ function renderMarkdown(text) {
   });
 }
 
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function getD1UserId() {
+  const meta = currentUser?.user_metadata || {};
+  const raw = meta.d1_user_id ?? meta.user_id ?? meta.db_user_id ?? 1;
+  const num = Number(raw);
+  return Number.isFinite(num) && num > 0 ? num : 1;
+}
+
+function buildWorkerUrl(path) {
+  const d1UserId = getD1UserId();
+  const url = new URL(path, WORKER_BASE);
+  if (d1UserId) {
+    url.searchParams.set("user_id", String(d1UserId));
+  }
+  return url.toString();
+}
+
+function getWorkerHeaders(extra = {}) {
+  const headers = { ...extra };
+  const d1UserId = getD1UserId();
+  if (d1UserId) {
+    headers["X-User-Id"] = String(d1UserId);
+  }
+  return headers;
+}
+
+async function workerFetch(path, options = {}) {
+  const finalOptions = { ...options };
+  finalOptions.headers = getWorkerHeaders(options.headers || {});
+  return fetch(buildWorkerUrl(path), finalOptions);
+}
+
+function getActiveChat() {
+  return state.chats.find(c => String(c.id) === String(state.activeChatId)) || null;
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function createLocalChat() {
-  return {
-    id: null,
-    localId: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    title: "Новий чат",
-    preview: "",
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-}
-
-function getChatKey(chatItem) {
-  return chatItem?.id ? String(chatItem.id) : chatItem?.localId || null;
-}
-
-function getActiveChat() {
-  return state.chats.find((c) => getChatKey(c) === state.activeChatId) || null;
-}
-
-function ensureLocalChatStub() {
+function ensureLocalChat() {
   let active = getActiveChat();
   if (!active) {
-    active = createLocalChat();
+    active = {
+      id: uid(),
+      title: "Новий чат",
+      messages: [],
+      createdAt: Date.now(),
+      localOnly: true
+    };
     state.chats.unshift(active);
-    state.activeChatId = getChatKey(active);
+    state.activeChatId = active.id;
     saveState();
   }
   return active;
 }
 
-function getActiveChatDraftKey() {
-  const active = getActiveChat();
-  return active ? getChatKey(active) : "global";
-}
-
-function saveDraft(value) {
-  state.drafts[getActiveChatDraftKey()] = value;
-  saveState();
-}
-
-function loadDraft() {
-  const key = getActiveChatDraftKey();
-  const value = state.drafts[key] || "";
-  if (promptInput && document.activeElement !== promptInput) {
-    promptInput.value = value;
-    autoResize();
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = state.theme === "light" ? "🌙" : "☀️";
   }
-}
-
-function clearDraft() {
-  const key = getActiveChatDraftKey();
-  delete state.drafts[key];
-  saveState();
-  promptInput.value = "";
-  autoResize();
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text ?? "";
-  return div.innerHTML;
-}
-
-function updateCurrentChatTitle() {
-  const active = getActiveChat();
-  currentChatTitle.textContent = active?.title || "Новий чат";
 }
 
 function renderAuthState() {
+  if (!authLoggedOut || !authLoggedIn) return;
+
   if (!currentUser) {
-    authLoggedOut?.classList.remove("hidden");
-    authLoggedIn?.classList.add("hidden");
+    authLoggedOut.classList.remove("hidden");
+    authLoggedIn.classList.add("hidden");
     return;
   }
 
-  authLoggedOut?.classList.add("hidden");
-  authLoggedIn?.classList.remove("hidden");
+  authLoggedOut.classList.add("hidden");
+  authLoggedIn.classList.remove("hidden");
 
   const meta = currentUser.user_metadata || {};
-  if (userName) userName.textContent = meta.full_name || meta.name || currentUser.email || "User";
+  if (userName) userName.textContent = meta.full_name || meta.name || "Користувач";
   if (userEmail) userEmail.textContent = currentUser.email || "";
-  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/80x80/png";
+  if (userAvatar) userAvatar.src = meta.avatar_url || meta.picture || "https://placehold.co/40x40/png";
 }
 
 function renderChatList() {
+  if (!chatList) return;
   chatList.innerHTML = "";
 
   for (const item of state.chats) {
-    const isActive = getChatKey(item) === state.activeChatId;
-    const subtitle =
-      (item.messages || []).find((m) => m.role === "user")?.content ||
-      item.preview ||
-      "Порожній чат";
-
     const div = document.createElement("div");
-    div.className = `chat-item ${isActive ? "active" : ""}`;
+    div.className = `chat-item ${String(item.id) === String(state.activeChatId) ? "active" : ""}`;
     div.innerHTML = `
-      <div class="chat-item-main">
-        <div class="chat-item-title">${escapeHtml(item.title || "Новий чат")}</div>
-        <div class="chat-item-subtitle">${escapeHtml(String(subtitle).slice(0, 100))}</div>
-      </div>
-      <button class="chat-item-delete" title="Видалити">✕</button>
+      <div class="chat-item-title">${escapeHtml(item.title || "Новий чат")}</div>
+      <button class="chat-item-delete">✕</button>
     `;
 
     div.querySelector(".chat-item-delete").onclick = async (e) => {
       e.stopPropagation();
-      if (!confirm("Видалити цей чат?")) return;
+      if (!confirm("Видалити чат?")) return;
 
-      if (item.id && currentUser) {
-        await historyApi(`/api/chats/${item.id}`, { method: "DELETE" }).catch(console.error);
+      try {
+        if (!item.localOnly && !String(item.id).startsWith("local-")) {
+          await deleteCloudChat(item.id);
+        }
+      } catch (err) {
+        console.error(err);
       }
 
-      state.chats = state.chats.filter((c) => getChatKey(c) !== getChatKey(item));
-
-      if (!state.chats.length) {
-        const next = createLocalChat();
-        state.chats = [next];
-        state.activeChatId = getChatKey(next);
-      } else {
-        state.activeChatId = getChatKey(state.chats[0]);
+      state.chats = state.chats.filter(c => String(c.id) !== String(item.id));
+      if (String(state.activeChatId) === String(item.id)) {
+        state.activeChatId = state.chats[0]?.id || null;
       }
-
       saveState();
       renderAll();
     };
 
     div.onclick = async () => {
       if (requestInFlight) return;
-      state.activeChatId = getChatKey(item);
+      state.activeChatId = item.id;
       saveState();
 
-      if (item.id && currentUser) {
-        await loadChatDetails(item.id);
-      } else {
-        renderAll();
+      if (!item.localOnly && !item.messagesLoaded) {
+        try {
+          const data = await fetchCloudChat(item.id);
+          mergeCloudChatIntoState(data.chat);
+        } catch (err) {
+          console.error(err);
+        }
       }
 
-      closeSidebar();
+      renderAll();
+      sidebar?.classList.remove("open");
+      mobileOverlay?.classList.remove("show");
+      document.body.classList.remove("no-scroll");
     };
 
     chatList.appendChild(div);
   }
 }
 
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function renderAttachmentCard(att) {
-  if (!att || att.kind !== "image" || !att.url) return "";
-  return `
-    <div class="attachment-card">
-      <img src="${escapeHtml(att.url)}" alt="${escapeHtml(att.file_name || "Image attachment")}" loading="lazy" decoding="async">
-      <div class="attachment-meta">
-        <span>${escapeHtml(att.file_name || "image")}</span>
-        <span>${escapeHtml(formatBytes(att.file_size || 0))}</span>
-      </div>
-    </div>
-  `;
-}
-
 function renderMessages() {
-  chat.innerHTML = `<div class="chat-inner"></div>`;
-  const inner = chat.querySelector(".chat-inner");
-  const active = getActiveChat();
+  const active = getActiveChat() || ensureLocalChat();
+  if (!chat) return;
 
-  if (!active || !active.messages?.length) {
-    inner.innerHTML = `<div class="chat-empty">Що хочеш дізнатись?</div>`;
-    queueMicrotask(scrollChatToBottom);
+  chat.innerHTML = "";
+
+  if (!active.messages.length) {
+    chat.innerHTML = `<div class="chat-empty">Чим можу допомогти?</div>`;
     return;
   }
-
-  const fragment = document.createDocumentFragment();
 
   for (const msg of active.messages) {
     const wrapper = document.createElement("div");
     wrapper.className = `message-wrapper ${msg.role}`;
 
-    const content = document.createElement("div");
-    content.className = "message-content";
+    const inner = document.createElement("div");
+    inner.className = "message-content";
 
     if (msg.isError) {
-      content.innerHTML = `
-        <div class="error-card">
-          <strong>Помилка</strong><br>
-          ${escapeHtml(msg.content || "Невідома помилка")}
-          <div class="error-actions">
-            <button class="secondary-btn" onclick="retryMessage()">Спробувати ще раз</button>
-          </div>
+      inner.innerHTML = `
+        <div style="background:var(--danger-bg);color:var(--danger-text);padding:12px;border-radius:12px;border:1px solid var(--danger-text);">
+          <strong>Помилка:</strong> ${escapeHtml(msg.content || "Невідома помилка")}
+          <br>
+          <button class="btn" style="margin-top:10px;width:auto;border-color:var(--danger-text);color:var(--danger-text);" onclick="retryMessage()">🔄 Повторити</button>
         </div>
       `;
     } else if (msg.role === "assistant") {
-      content.innerHTML = renderMarkdown(msg.content || "");
+      inner.innerHTML = renderMarkdown(msg.content || "");
     } else {
-      const text = document.createElement("div");
-      text.textContent = msg.content || "";
-      content.appendChild(text);
+      inner.textContent = msg.content || "";
     }
 
-    if (Array.isArray(msg.attachments) && msg.attachments.length) {
-      const attachWrap = document.createElement("div");
-      attachWrap.className = "message-attachments";
-      attachWrap.innerHTML = msg.attachments.map(renderAttachmentCard).join("");
-      content.appendChild(attachWrap);
+    if (msg.image?.dataUrl) {
+      const img = document.createElement("img");
+      img.src = msg.image.dataUrl;
+      img.className = "inline-preview-image";
+      inner.appendChild(img);
     }
 
-    wrapper.appendChild(content);
-    fragment.appendChild(wrapper);
+    if (Array.isArray(msg.attachments)) {
+      for (const att of msg.attachments) {
+        if (att.type && att.type.startsWith("image/") && att.url) {
+          const img = document.createElement("img");
+          img.src = att.url;
+          img.className = "inline-preview-image";
+          inner.appendChild(img);
+        }
+      }
+    }
+
+    wrapper.appendChild(inner);
+    chat.appendChild(wrapper);
   }
 
-  inner.appendChild(fragment);
-  requestAnimationFrame(scrollChatToBottom);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function renderAll() {
   renderAuthState();
   renderChatList();
   renderMessages();
-  updateCurrentChatTitle();
 
-  if (requestInFlight) {
-    stopBtn?.classList.remove("hidden");
-    sendBtn?.classList.add("hidden");
-  } else {
-    stopBtn?.classList.add("hidden");
-    sendBtn?.classList.remove("hidden");
+  if (stopBtn && sendBtn) {
+    if (requestInFlight) {
+      stopBtn.classList.remove("hidden");
+      sendBtn.classList.add("hidden");
+    } else {
+      stopBtn.classList.add("hidden");
+      sendBtn.classList.remove("hidden");
+    }
   }
-
-  loadDraft();
 }
 
 function autoResize() {
+  if (!promptInput) return;
   promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 220) + "px";
-}
-
-function scrollChatToBottom() {
-  chat.scrollTop = chat.scrollHeight;
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 150) + "px";
 }
 
 function updateSelectedImageUI() {
+  if (!selectedImageBar || !selectedImagePreview) return;
+
   if (!selectedImage) {
-    selectedImageBar?.classList.add("hidden");
-    selectedImagePreview?.removeAttribute("src");
-    selectedImageName.textContent = "";
+    selectedImageBar.classList.add("hidden");
+    selectedImagePreview.removeAttribute("src");
     return;
   }
 
-  selectedImageBar?.classList.remove("hidden");
+  selectedImageBar.classList.remove("hidden");
+  if (selectedImageName) selectedImageName.textContent = selectedImage.name || "Зображення";
   selectedImagePreview.src = selectedImage.dataUrl;
-  selectedImageName.textContent = selectedImage.name || "image";
 }
 
 function clearSelectedImage() {
   selectedImage = null;
-  imageInput.value = "";
+  if (imageInput) imageInput.value = "";
   updateSelectedImageUI();
 }
 
 function setBusy(isBusy, text = "") {
   requestInFlight = isBusy;
-  statusText.textContent = text || "";
-  statusText.classList.toggle("hidden", !text);
+  if (statusText) {
+    statusText.textContent = text || (isBusy ? "Генерація..." : "Готово");
+    statusText.classList.remove("hidden");
+  }
   renderAll();
 }
 
-function closeSidebar() {
-  sidebar?.classList.remove("open");
-  mobileOverlay?.classList.remove("show");
-  document.body.classList.remove("no-scroll");
-}
-
-function openSidebar() {
-  sidebar?.classList.add("open");
-  mobileOverlay?.classList.add("show");
-  document.body.classList.add("no-scroll");
-}
-
-async function safeFetchJson(url, options = {}, label = "request") {
-  let response;
-
-  try {
-    response = await fetch(url, options);
-  } catch (error) {
-    throw new Error(`${label}: network error / CORS / endpoint недоступний`);
-  }
-
-  const rawText = await response.text().catch(() => "");
-  let data = {};
-  try {
-    data = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    data = { raw: rawText };
-  }
-
-  if (!response.ok) {
-    const msg =
-      data?.error ||
-      data?.message ||
-      data?.details ||
-      `${label}: HTTP ${response.status}`;
-    throw new Error(msg);
-  }
-
-  return data;
-}
-
-async function historyApi(path, options = {}) {
-  if (!currentUser?.id) {
-    throw new Error("Спочатку увійди через Google");
-  }
-
-  return safeFetchJson(
-    `${HISTORY_API_BASE}${path}`,
-    {
-      ...options,
-      headers: {
-        "X-User-Id": String(currentUser.id),
-        ...(options.headers || {})
-      }
-    },
-    `Worker ${path}`
-  );
-}
-
-async function historyJson(path, method = "GET", body = null) {
-  return historyApi(path, {
-    method,
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: body ? JSON.stringify(body) : undefined
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Не вдалося прочитати файл"));
+    reader.readAsDataURL(file);
   });
 }
 
-async function pingWorker() {
-  return safeFetchJson(`${HISTORY_API_BASE}/api/health`, {}, "Worker health");
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-async function uploadAttachment(chatId, file) {
-  const fd = new FormData();
-  fd.append("chat_id", String(chatId));
-  fd.append("file", file);
-
-  return safeFetchJson(
-    `${HISTORY_API_BASE}/api/attachments/upload`,
-    {
-      method: "POST",
-      headers: {
-        "X-User-Id": String(currentUser.id)
-      },
-      body: fd
-    },
-    "Worker upload"
-  ).then((data) => data.attachment);
+function normalizeCloudMessage(row) {
+  return {
+    id: String(row.id),
+    role: row.role,
+    content: row.content || "",
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    provider: row.provider || null,
+    model: row.model || null,
+    prompt_tokens: row.prompt_tokens || 0,
+    completion_tokens: row.completion_tokens || 0,
+    attachments: Array.isArray(row.attachments) ? row.attachments : []
+  };
 }
 
-async function loadChatsFromWorker() {
-  if (!currentUser || hasLoadedChats) return;
+function mergeCloudChatIntoState(chatData) {
+  const existingIndex = state.chats.findIndex(c => String(c.id) === String(chatData.id));
+  const merged = {
+    id: chatData.id,
+    title: chatData.title || "Новий чат",
+    model: chatData.model || "",
+    system_prompt: chatData.system_prompt || "",
+    createdAt: chatData.created_at ? new Date(chatData.created_at).getTime() : Date.now(),
+    updatedAt: chatData.updated_at ? new Date(chatData.updated_at).getTime() : Date.now(),
+    localOnly: false,
+    messagesLoaded: true,
+    messages: Array.isArray(chatData.messages) ? chatData.messages.map(normalizeCloudMessage) : []
+  };
+
+  if (existingIndex >= 0) {
+    state.chats[existingIndex] = {
+      ...state.chats[existingIndex],
+      ...merged
+    };
+  } else {
+    state.chats.unshift(merged);
+  }
+
+  if (!state.activeChatId) {
+    state.activeChatId = merged.id;
+  }
+
+  saveState();
+}
+
+async function fetchCloudChats() {
+  const res = await workerFetch("/api/chats", { method: "GET" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function createCloudChat(title = "New chat", model = "auto") {
+  const res = await workerFetch("/api/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, model })
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function fetchCloudChat(chatId) {
+  const res = await workerFetch(`/api/chats/${chatId}`, { method: "GET" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function deleteCloudChat(chatId) {
+  const res = await workerFetch(`/api/chats/${chatId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function createCloudMessage(chatId, payload) {
+  const res = await workerFetch(`/api/chats/${chatId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function uploadCloudAttachment(chatId, file, messageId = null) {
+  const formData = new FormData();
+  formData.append("chat_id", String(chatId));
+  if (messageId) formData.append("message_id", String(messageId));
+  formData.append("file", file);
+
+  const res = await workerFetch("/api/attachments/upload", {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+async function loadCloudChats() {
+  if (cloudLoaded) return;
 
   try {
-    await pingWorker();
+    const data = await fetchCloudChats();
+    const chats = Array.isArray(data.chats) ? data.chats : [];
 
-    const data = await historyApi("/api/chats");
-    const serverChats = (data.chats || []).map((chatItem) => ({
-      id: String(chatItem.id),
-      localId: String(chatItem.id),
-      title: chatItem.title || "Новий чат",
-      preview: chatItem.preview || "",
+    state.chats = chats.map(item => ({
+      id: item.id,
+      title: item.title || "Новий чат",
+      preview: item.preview || "",
+      model: item.model || "",
+      createdAt: item.created_at ? new Date(item.created_at).getTime() : Date.now(),
+      updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : Date.now(),
       messages: [],
-      createdAt: chatItem.created_at ? new Date(chatItem.created_at).getTime() : Date.now(),
-      updatedAt: chatItem.updated_at ? new Date(chatItem.updated_at).getTime() : Date.now()
+      localOnly: false,
+      messagesLoaded: false
     }));
 
-    const localUnsaved = state.chats.filter((c) => !c.id);
-    state.chats = [...localUnsaved, ...serverChats];
-
-    if (!state.chats.length) {
-      const item = createLocalChat();
-      state.chats = [item];
-      state.activeChatId = getChatKey(item);
-    } else if (!state.activeChatId || !state.chats.find((c) => getChatKey(c) === state.activeChatId)) {
-      state.activeChatId = getChatKey(state.chats[0]);
+    if (state.chats.length) {
+      state.activeChatId = state.chats[0].id;
+      const full = await fetchCloudChat(state.chats[0].id);
+      mergeCloudChatIntoState(full.chat);
+    } else {
+      state.activeChatId = null;
     }
 
     saveState();
     renderAll();
-
-    const active = getActiveChat();
-    if (active?.id) {
-      await loadChatDetails(active.id);
-    }
-
-    hasLoadedChats = true;
-  } catch (e) {
-    console.error("loadChatsFromWorker:", e);
-    setBusy(false, e.message || "Не вдалося завантажити чати");
+    cloudLoaded = true;
+  } catch (err) {
+    console.error("loadCloudChats failed:", err);
   }
 }
 
-async function loadChatDetails(chatId) {
-  const data = await historyApi(`/api/chats/${chatId}`);
-  const fullChat = data.chat;
-
-  let existing = state.chats.find((c) => String(c.id) === String(chatId));
-  if (!existing) {
-    existing = {
-      id: String(chatId),
-      localId: String(chatId),
-      title: fullChat.title || "Новий чат",
-      preview: "",
-      messages: [],
-      createdAt: fullChat.createdAt || Date.now(),
-      updatedAt: fullChat.updatedAt || Date.now()
-    };
-    state.chats.unshift(existing);
-  }
-
-  existing.id = String(chatId);
-  existing.localId = String(chatId);
-  existing.title = fullChat.title || existing.title;
-  existing.messages = Array.isArray(fullChat.messages) ? fullChat.messages : [];
-  existing.preview = existing.messages.find((m) => m.role === "user")?.content || "";
-  existing.createdAt = fullChat.createdAt || existing.createdAt;
-  existing.updatedAt = fullChat.updatedAt || existing.updatedAt;
-
-  state.activeChatId = String(chatId);
-  saveState();
-  renderAll();
-}
-
-window.retryMessage = function () {
+window.retryMessage = function() {
   const active = getActiveChat();
   if (!active) return;
 
   const lastError = active.messages[active.messages.length - 1];
-  if (lastError?.isError) active.messages.pop();
+  if (lastError?.isError) {
+    active.messages.pop();
+  }
 
-  const lastUserMsg = [...active.messages].reverse().find((m) => m.role === "user");
-  if (!lastUserMsg) return;
-
-  sendChatMessage(lastUserMsg.content, true);
+  const lastUserMsg = [...active.messages].reverse().find(m => m.role === "user");
+  if (lastUserMsg) {
+    selectedImage = lastUserMsg.image || null;
+    updateSelectedImageUI();
+    sendChatMessage(lastUserMsg.content || "", true);
+  }
 };
 
-function buildMessagesForAPI(active, assistantMsgId, modelConf, imageUrl = null) {
+function buildMessagesForAPI(active, assistantMsgId, modelConf) {
   const rawMessages = [{ role: "system", content: modelConf.system }];
+
   const recent = active.messages
     .slice(-12)
-    .filter((m) => String(m.id) !== String(assistantMsgId) && !m.isError);
+    .filter(m => m.id !== assistantMsgId && !m.isError);
 
   for (const m of recent) {
     if (m.role === "user") {
-      if (imageUrl && modelConf.vision && m === recent[recent.length - 1]) {
+      const text = (m.content || "").trim();
+
+      if (m.image?.dataUrl && modelConf.vision) {
         rawMessages.push({
           role: "user",
           content: [
-            { type: "text", text: (m.content || "").trim() },
-            { type: "image_url", image_url: { url: imageUrl } }
+            { type: "text", text: text || "Опиши це зображення" },
+            { type: "image_url", image_url: { url: m.image.dataUrl } }
           ]
         });
       } else {
         rawMessages.push({
           role: "user",
-          content: (m.content || "").trim()
+          content: text || (m.image?.dataUrl ? "Користувач надіслав зображення." : "")
         });
       }
     } else if (m.role === "assistant") {
@@ -566,200 +575,350 @@ function buildMessagesForAPI(active, assistantMsgId, modelConf, imageUrl = null)
     }
   }
 
-  return rawMessages;
+  const normalized = [];
+  let systemMessage = null;
+
+  for (const msg of rawMessages) {
+    if (msg.role === "system") {
+      systemMessage = msg;
+      continue;
+    }
+
+    if (!normalized.length) {
+      normalized.push(msg);
+      continue;
+    }
+
+    const prev = normalized[normalized.length - 1];
+
+    if (prev.role === msg.role) {
+      if (typeof prev.content === "string" && typeof msg.content === "string") {
+        prev.content = `${prev.content}\n\n${msg.content}`.trim();
+      } else if (Array.isArray(prev.content) && Array.isArray(msg.content)) {
+        prev.content = [...prev.content, ...msg.content];
+      } else if (typeof prev.content === "string" && Array.isArray(msg.content)) {
+        prev.content = [{ type: "text", text: prev.content }, ...msg.content];
+      } else if (Array.isArray(prev.content) && typeof msg.content === "string") {
+        prev.content = [...prev.content, { type: "text", text: msg.content }];
+      }
+    } else {
+      normalized.push(msg);
+    }
+  }
+
+  return systemMessage ? [systemMessage, ...normalized] : normalized;
 }
 
-async function ensureServerChatForActive(firstMessageText = "Новий чат") {
-  let active = ensureLocalChatStub();
-  if (active.id) return active;
+async function ensureRemoteChat(active, firstMessageText) {
+  if (!active.localOnly && !String(active.id).startsWith("local-")) return active;
 
-  const created = await historyJson("/api/chats", "POST", {
-    title: (firstMessageText || "Новий чат").slice(0, 48),
-    model: modelSelect?.value || "auto"
-  });
+  const created = await createCloudChat((firstMessageText || "Новий чат").slice(0, 30) || "Новий чат", modelSelect?.value || "auto");
+  const oldId = active.id;
+  const newChat = {
+    id: created.chat.id,
+    title: created.chat.title || "Новий чат",
+    model: created.chat.model || "",
+    system_prompt: created.chat.system_prompt || "",
+    createdAt: created.chat.created_at ? new Date(created.chat.created_at).getTime() : Date.now(),
+    updatedAt: created.chat.updated_at ? new Date(created.chat.updated_at).getTime() : Date.now(),
+    localOnly: false,
+    messagesLoaded: true,
+    messages: []
+  };
 
-  active.id = String(created.chat.id);
-  active.localId = String(created.chat.id);
-  active.title = created.chat.title || active.title;
-  state.activeChatId = String(created.chat.id);
+  state.chats = state.chats.map(c => String(c.id) === String(oldId) ? newChat : c);
+  state.activeChatId = newChat.id;
   saveState();
-
-  return active;
-}
-
-async function saveMessageOnServer(chatId, role, content, model = "", attachments = []) {
-  return historyJson(`/api/chats/${chatId}/messages`, "POST", {
-    role,
-    content,
-    model,
-    attachments
-  });
+  return newChat;
 }
 
 async function sendChatMessage(text, isRetry = false) {
   if (requestInFlight) return;
 
-  text = (text || "").trim();
-  if (!text) return;
+  let active = getActiveChat() || ensureLocalChat();
+  const modelId = modelSelect?.value || "groq/llama-3.3-70b-versatile";
+  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS["groq/llama-3.3-70b-versatile"];
 
-  if (!currentUser) {
-    alert("Спочатку увійди через Google, щоб зберігати історію.");
+  if (!isRetry) {
+    if (selectedImage && !modelConf.vision) {
+      active.messages.push({
+        id: uid(),
+        role: "assistant",
+        isError: true,
+        content: "Ця модель не підтримує фото. Обери Gemini Flash, Gemma 3 або Llama 3.2 Vision."
+      });
+      renderAll();
+      return;
+    }
+
+    active.messages.push({
+      id: uid(),
+      role: "user",
+      content: text,
+      image: selectedImage,
+      createdAt: Date.now(),
+      attachments: []
+    });
+
+    if (active.messages.length === 1) {
+      active.title = (text || "Фото").slice(0, 30) || "Новий чат";
+    }
+
+    if (active.messages.length > 50) {
+      active.messages = active.messages.slice(-50);
+    }
+
+    if (promptInput) promptInput.value = "";
+    autoResize();
+    saveState();
+  }
+
+  const userMessage = [...active.messages].reverse().find(m => m.role === "user");
+  const assistantMsg = {
+    id: uid(),
+    role: "assistant",
+    content: "",
+    createdAt: Date.now()
+  };
+
+  active.messages.push(assistantMsg);
+  renderAll();
+  setBusy(true, "Генерація...");
+
+  const controller = new AbortController();
+  currentController = controller;
+
+  try {
+    active = await ensureRemoteChat(active, text);
+
+    const reloadedActive = getActiveChat();
+    if (!reloadedActive) throw new Error("Не вдалося підготувати чат");
+    active = reloadedActive;
+
+    let createdUserMessage = null;
+    if (userMessage && !userMessage.cloudSaved) {
+      const created = await createCloudMessage(active.id, {
+        role: "user",
+        content: userMessage.content || "",
+        provider: "web",
+        model: modelId,
+        prompt_tokens: 0,
+        completion_tokens: 0
+      });
+
+      userMessage.id = String(created.message.id);
+      userMessage.cloudSaved = true;
+
+      if (selectedImage && imageInput?.files?.[0]) {
+        const uploaded = await uploadCloudAttachment(active.id, imageInput.files[0], created.message.id);
+        userMessage.attachments = [uploaded.attachment];
+      }
+
+      createdUserMessage = created.message;
+    }
+
+    const safeMessages = buildMessagesForAPI(active, assistantMsg.id, modelConf);
+
+    const response = await fetch("/api/proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: modelId,
+        messages: safeMessages,
+        temperature: 0.2,
+        max_tokens: modelConf.tokens,
+        top_p: 0.9,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const raw = await response.text().catch(() => "");
+      throw new Error(raw || `HTTP ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error("Порожня відповідь сервера");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    const msgEls = chat.querySelectorAll(".message-wrapper.assistant .message-content");
+    const targetEl = msgEls[msgEls.length - 1];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        const lines = part.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const dataStr = line.slice(5).trim();
+          if (!dataStr || dataStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            const delta = parsed?.choices?.[0]?.delta?.content || parsed?.choices?.[0]?.message?.content || "";
+            if (typeof delta === "string" && delta) {
+              assistantMsg.content += delta;
+              if (targetEl) {
+                targetEl.innerHTML = renderMarkdown(assistantMsg.content);
+                chat.scrollTop = chat.scrollHeight;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    const createdAssistant = await createCloudMessage(active.id, {
+      role: "assistant",
+      content: assistantMsg.content || "",
+      provider: "openrouter",
+      model: modelId,
+      prompt_tokens: 0,
+      completion_tokens: 0
+    });
+
+    assistantMsg.id = String(createdAssistant.message.id);
+    assistantMsg.cloudSaved = true;
+
+    clearSelectedImage();
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      assistantMsg.content += "\n\n*[Зупинено]*";
+      renderAll();
+    } else {
+      active.messages.pop();
+      active.messages.push({
+        id: uid(),
+        role: "assistant",
+        isError: true,
+        content: e.message || "Невідома помилка"
+      });
+      renderAll();
+    }
+  } finally {
+    currentController = null;
+    saveState();
+    setBusy(false, "Готово");
+  }
+}
+
+themeToggleBtn?.addEventListener("click", () => {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  saveState();
+  applyTheme();
+});
+
+hamburgerBtn?.addEventListener("click", () => {
+  sidebar?.classList.add("open");
+  mobileOverlay?.classList.add("show");
+  document.body.classList.add("no-scroll");
+});
+
+mobileOverlay?.addEventListener("click", () => {
+  sidebar?.classList.remove("open");
+  mobileOverlay?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+});
+
+form?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = promptInput?.value.trim() || "";
+  if (text || selectedImage) sendChatMessage(text);
+});
+
+promptInput?.addEventListener("input", autoResize);
+
+promptInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form?.requestSubmit();
+  }
+});
+
+stopBtn?.addEventListener("click", () => currentController?.abort());
+
+clearBtn?.addEventListener("click", () => {
+  const active = getActiveChat() || ensureLocalChat();
+  if (confirm("Очистити історію?")) {
+    active.messages = [];
+    active.title = "Новий чат";
+    saveState();
+    renderAll();
+  }
+});
+
+newChatBtn?.addEventListener("click", () => {
+  state.activeChatId = null;
+  ensureLocalChat();
+  renderAll();
+  sidebar?.classList.remove("open");
+  mobileOverlay?.classList.remove("show");
+  document.body.classList.remove("no-scroll");
+});
+
+imageBtn?.addEventListener("click", () => imageInput?.click());
+
+imageInput?.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) return;
+
+  if (file.size > 5 * 1024 * 1024) {
+    alert("Максимальний розмір: 5 МБ.");
+    imageInput.value = "";
     return;
   }
 
-  let active = ensureLocalChatStub();
-  const modelId = modelSelect?.value || "auto";
-  const modelConf = ALLOWED_MODELS[modelId] || ALLOWED_MODELS.auto;
-
-  setBusy(true, "Перевіряю backend...");
-
   try {
-    await pingWorker();
-    active = await ensureServerChatForActive(text);
-
-    let uploadedAttachment = null;
-    if (selectedImage?.file) {
-      setBusy(true, "Завантажую фото...");
-      uploadedAttachment = await uploadAttachment(active.id, selectedImage.file);
-    }
-
-    let userMessage = null;
-    if (!isRetry) {
-      userMessage = {
-        id: `tmp_user_${Date.now()}`,
-        role: "user",
-        content: text,
-        createdAt: Date.now(),
-        attachments: uploadedAttachment
-          ? [{
-              kind: "image",
-              url: uploadedAttachment.url,
-              file_name: uploadedAttachment.file_name,
-              file_size: uploadedAttachment.file_size
-            }]
-          : []
-      };
-
-      active.messages.push(userMessage);
-
-      if (!active.title || active.title === "Новий чат") {
-        active.title = text.slice(0, 48);
-      }
-
-      active.preview = text;
-      active.updatedAt = Date.now();
-      saveState();
-      renderAll();
-      clearDraft();
-      clearSelectedImage();
-
-      const savedUser = await saveMessageOnServer(
-        active.id,
-        "user",
-        text,
-        modelId,
-        uploadedAttachment ? [uploadedAttachment.id] : []
-      );
-
-      userMessage.id = String(savedUser.message.id || userMessage.id);
-    }
-
-    const assistantMessage = {
-      id: `tmp_assistant_${Date.now()}`,
-      role: "assistant",
-      content: ""
+    const dataUrl = await fileToDataUrl(file);
+    selectedImage = {
+      name: file.name,
+      type: file.type,
+      dataUrl
     };
-
-    active.messages.push(assistantMessage);
-    saveState();
-    renderAll();
-
-    const messages = buildMessagesForAPI(active, assistantMessage.id, modelConf, uploadedAttachment?.url || null);
-    currentController = new AbortController();
-
-    setBusy(true, "Викликаю Vercel proxy...");
-
-    const data = await safeFetchJson(
-      "/api/proxy",
-      {
-        method: "POST",
-        signal: currentController.signal,
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: modelId,
-          messages,
-          max_tokens: modelConf.tokens
-        })
-      },
-      "Vercel /api/proxy"
-    );
-
-    assistantMessage.content = data?.text || "Порожня відповідь";
-    saveState();
-    renderAll();
-
-    const savedAssistant = await saveMessageOnServer(active.id, "assistant", assistantMessage.content, modelId, []);
-    assistantMessage.id = String(savedAssistant.message.id || assistantMessage.id);
-
-    active.updatedAt = Date.now();
-    state.chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    saveState();
-    renderAll();
+    updateSelectedImageUI();
   } catch (e) {
-    console.error("sendChatMessage:", e);
-    const activeChat = getActiveChat();
-    if (activeChat) {
-      const last = activeChat.messages[activeChat.messages.length - 1];
-      if (last?.role === "assistant" && !last.content) {
-        activeChat.messages.pop();
-      }
-
-      activeChat.messages.push({
-        id: `err_${Date.now()}`,
-        role: "assistant",
-        content: e.message || "Помилка",
-        isError: true
-      });
-
-      saveState();
-      renderAll();
-    }
-    setBusy(false, e.message || "Помилка запиту");
-  } finally {
-    currentController = null;
-    setBusy(false, "");
+    alert("Помилка завантаження фото");
   }
-}
+});
 
-async function initAuth() {
-  if (!sb) return;
+removeImageBtn?.addEventListener("click", clearSelectedImage);
 
-  const { data: { session } = {} } = await sb.auth.getSession();
+sb?.auth.onAuthStateChange(async (_event, session) => {
   currentUser = session?.user || null;
-  renderAll();
+  renderAuthState();
 
   if (currentUser) {
-    await loadChatsFromWorker();
+    cloudLoaded = false;
+    await loadCloudChats();
   }
+});
 
-  sb.auth.onAuthStateChange(async (_event, sessionData) => {
-    currentUser = sessionData?.user || null;
-    hasLoadedChats = false;
-    renderAll();
-
+sb?.auth.getSession()
+  .then(async ({ data }) => {
+    currentUser = data?.session?.user || null;
+    renderAuthState();
     if (currentUser) {
-      await loadChatsFromWorker();
+      await loadCloudChats();
     }
-  });
-}
+  })
+  .catch(() => {});
 
 googleLoginBtn?.addEventListener("click", async () => {
   if (!sb) return;
   await sb.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: window.location.origin }
+    options: { redirectTo: window.location.origin + "/" }
   });
 });
 
@@ -767,110 +926,11 @@ logoutBtn?.addEventListener("click", async () => {
   if (!sb) return;
   await sb.auth.signOut();
   currentUser = null;
-  hasLoadedChats = false;
-  renderAll();
+  cloudLoaded = false;
+  renderAuthState();
 });
 
-promptInput?.addEventListener("input", () => {
-  autoResize();
-  saveDraft(promptInput.value);
-});
-
-promptInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    form.requestSubmit();
-  }
-});
-
-form?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = promptInput.value.trim();
-  if (!text) return;
-  await sendChatMessage(text);
-});
-
-newChatBtn?.addEventListener("click", () => {
-  const fresh = createLocalChat();
-  state.chats.unshift(fresh);
-  state.activeChatId = getChatKey(fresh);
-  saveState();
-  renderAll();
-  closeSidebar();
-  promptInput.focus();
-});
-
-clearBtn?.addEventListener("click", () => {
-  const active = getActiveChat();
-  if (!active) return;
-  if (!confirm("Очистити повідомлення цього чату локально?")) return;
-  active.messages = [];
-  active.preview = "";
-  active.title = active.id ? active.title : "Новий чат";
-  saveState();
-  renderAll();
-});
-
-stopBtn?.addEventListener("click", () => {
-  if (currentController) currentController.abort();
-});
-
-imageBtn?.addEventListener("click", () => imageInput.click());
-
-imageInput?.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  if (!file.type.startsWith("image/")) {
-    alert("Потрібен файл зображення.");
-    return;
-  }
-
-  if (file.size > 8 * 1024 * 1024) {
-    alert("Фото занадто велике. До 8 MB.");
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    selectedImage = {
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      dataUrl: reader.result
-    };
-    updateSelectedImageUI();
-  };
-  reader.readAsDataURL(file);
-});
-
-removeImageBtn?.addEventListener("click", clearSelectedImage);
-hamburgerBtn?.addEventListener("click", openSidebar);
-closeSidebarBtn?.addEventListener("click", closeSidebar);
-mobileOverlay?.addEventListener("click", closeSidebar);
-
-window.addEventListener("resize", () => {
-  autoResize();
-  if (window.innerWidth > 1024) closeSidebar();
-});
-
-window.addEventListener("orientationchange", () => {
-  setTimeout(() => {
-    autoResize();
-    scrollChatToBottom();
-  }, 120);
-});
-
-(function boot() {
-  if (!state.chats.length) {
-    const initial = createLocalChat();
-    state.chats = [initial];
-    state.activeChatId = getChatKey(initial);
-    saveState();
-  }
-
-  renderAll();
-  autoResize();
-  initAuth();
-})();
+applyTheme();
+renderAll();
+autoResize();
+updateSelectedImageUI();
