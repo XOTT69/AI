@@ -34,15 +34,17 @@ export default {
         return json(request, { error: "Missing FILES binding", reqId }, 500);
       }
 
-      const userId = getUserId(request);
+      const userId = getUserId(request, url);
+
       if (!userId && url.pathname !== "/api/health") {
-        return json(request, { error: "Missing X-User-Id header", reqId }, 401);
+        return json(request, { error: "Missing X-User-Id header or user_id query", reqId }, 401);
       }
 
       if (url.pathname === "/api/chats" && request.method === "GET") {
         const { results } = await env.DB.prepare(`
           SELECT
             c.id,
+            c.user_id,
             c.title,
             c.model,
             c.system_prompt,
@@ -66,13 +68,13 @@ export default {
       if (url.pathname === "/api/chats" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const title = String(body?.title || "New chat").slice(0, 120);
-        const model = String(body?.model || "").slice(0, 120);
-        const systemPrompt = String(body?.system_prompt || "");
+        const model = body?.model ? String(body.model).slice(0, 120) : null;
+        const systemPrompt = body?.system_prompt ? String(body.system_prompt) : null;
 
         const result = await env.DB.prepare(`
           INSERT INTO chats (user_id, title, model, system_prompt)
           VALUES (?, ?, ?, ?)
-        `).bind(userId, title, model || null, systemPrompt || null).run();
+        `).bind(userId, title, model, systemPrompt).run();
 
         const chat = await env.DB.prepare(`
           SELECT id, user_id, title, model, system_prompt, created_at, updated_at
@@ -270,7 +272,8 @@ export default {
       if (url.pathname === "/api/attachments/upload" && request.method === "POST") {
         const form = await request.formData();
         const chatId = Number(form.get("chat_id") || 0);
-        const messageId = Number(form.get("message_id") || 0);
+        const messageIdRaw = form.get("message_id");
+        const messageId = messageIdRaw ? Number(messageIdRaw) : null;
         const file = form.get("file");
 
         if (!chatId) {
@@ -347,7 +350,7 @@ export default {
           )
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).bind(
-          messageId || null,
+          messageId,
           userId,
           chatId,
           safeName,
@@ -402,8 +405,10 @@ export default {
   }
 };
 
-function getUserId(request) {
-  const raw = String(request.headers.get("X-User-Id") || "").trim();
+function getUserId(request, url) {
+  const headerValue = String(request.headers.get("X-User-Id") || "").trim();
+  const queryValue = String(url.searchParams.get("user_id") || "").trim();
+  const raw = headerValue || queryValue;
   const num = Number(raw);
   return Number.isFinite(num) && num > 0 ? num : null;
 }
